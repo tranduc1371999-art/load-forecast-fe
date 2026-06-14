@@ -1,0 +1,7 @@
+services:
+  load-forecast-fe:
+    build: .
+    container_name: load-forecast-fe
+    restart: always
+    ports:
+      - "3000:80"
