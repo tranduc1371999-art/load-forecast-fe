@@ -7,10 +7,12 @@ import {
   MdHome,
   MdLock,
   MdOutlineShoppingCart,
+  MdShowChart,
 } from 'react-icons/md';
 
 // Admin Imports
 import MainDashboard from 'views/admin/default';
+import LoadForecast from 'views/admin/loadForecast';
 import NFTMarketplace from 'views/admin/marketplace';
 import Profile from 'views/admin/profile';
 import DataTables from 'views/admin/dataTables';
@@ -26,6 +28,13 @@ const routes = [
     path: '/default',
     icon: <Icon as={MdHome} width="20px" height="20px" color="inherit" />,
     component: <MainDashboard />,
+  },
+  {
+    name: 'Load Forecast',
+    layout: '/admin',
+    path: '/load-forecast',
+    icon: <Icon as={MdShowChart} width="20px" height="20px" color="inherit" />,
+    component: <LoadForecast />,
   },
   {
     name: 'NFT Marketplace',
