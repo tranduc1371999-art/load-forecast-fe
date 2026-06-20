@@ -1,171 +1,273 @@
-// Chakra imports
-import { Portal, Box, useDisclosure } from '@chakra-ui/react';
-import Footer from 'components/footer/FooterAdmin.js';
-// Layout components
-import Navbar from 'components/navbar/NavbarAdmin.js';
-import Sidebar from 'components/sidebar/Sidebar.js';
-import { SidebarContext } from 'contexts/SidebarContext';
+import {
+  Avatar,
+  Badge,
+  Box,
+  Flex,
+  Icon,
+  Text,
+  VStack,
+} from '@chakra-ui/react';
 import React, { useState } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import {
+  MdDashboard,
+  MdDirectionsCar,
+  MdBolt,
+  MdLogout,
+  MdPerson,
+  MdTaskAlt,
+  MdVerifiedUser,
+} from 'react-icons/md';
 import routes from 'routes.js';
 
-// Custom Chakra theme
-export default function Dashboard(props) {
-  const { ...rest } = props;
-  // states and functions
-  const [fixed] = useState(false);
-  const [toggleSidebar, setToggleSidebar] = useState(false);
-  // functions for changing the states from components
-  const getRoute = () => {
-    return window.location.pathname !== '/admin/full-screen-maps';
-  };
-  const getActiveRoute = (routes) => {
-    let activeRoute = 'Default Brand Text';
-    for (let i = 0; i < routes.length; i++) {
-      if (routes[i].collapse) {
-        let collapseActiveRoute = getActiveRoute(routes[i].items);
-        if (collapseActiveRoute !== activeRoute) {
-          return collapseActiveRoute;
-        }
-      } else if (routes[i].category) {
-        let categoryActiveRoute = getActiveRoute(routes[i].items);
-        if (categoryActiveRoute !== activeRoute) {
-          return categoryActiveRoute;
-        }
-      } else {
-        if (
-          window.location.href.indexOf(routes[i].layout + routes[i].path) !== -1
-        ) {
-          return routes[i].name;
-        }
-      }
-    }
-    return activeRoute;
-  };
-  const getActiveNavbar = (routes) => {
-    let activeNavbar = false;
-    for (let i = 0; i < routes.length; i++) {
-      if (routes[i].collapse) {
-        let collapseActiveNavbar = getActiveNavbar(routes[i].items);
-        if (collapseActiveNavbar !== activeNavbar) {
-          return collapseActiveNavbar;
-        }
-      } else if (routes[i].category) {
-        let categoryActiveNavbar = getActiveNavbar(routes[i].items);
-        if (categoryActiveNavbar !== activeNavbar) {
-          return categoryActiveNavbar;
-        }
-      } else {
-        if (
-          window.location.href.indexOf(routes[i].layout + routes[i].path) !== -1
-        ) {
-          return routes[i].secondary;
-        }
-      }
-    }
-    return activeNavbar;
-  };
-  const getActiveNavbarText = (routes) => {
-    let activeNavbar = false;
-    for (let i = 0; i < routes.length; i++) {
-      if (routes[i].collapse) {
-        let collapseActiveNavbar = getActiveNavbarText(routes[i].items);
-        if (collapseActiveNavbar !== activeNavbar) {
-          return collapseActiveNavbar;
-        }
-      } else if (routes[i].category) {
-        let categoryActiveNavbar = getActiveNavbarText(routes[i].items);
-        if (categoryActiveNavbar !== activeNavbar) {
-          return categoryActiveNavbar;
-        }
-      } else {
-        if (
-          window.location.href.indexOf(routes[i].layout + routes[i].path) !== -1
-        ) {
-          return routes[i].messageNavbar;
-        }
-      }
-    }
-    return activeNavbar;
-  };
-  const getRoutes = (routes) => {
-    return routes.map((route, key) => {
-      if (route.layout === '/admin') {
-        return (
-          <Route path={`${route.path}`} element={route.component} key={key} />
-        );
-      }
-      if (route.collapse) {
-        return getRoutes(route.items);
-      } else {
-        return null;
-      }
-    });
-  };
-  document.documentElement.dir = 'ltr';
-  const { onOpen } = useDisclosure();
-  document.documentElement.dir = 'ltr';
-  return (
-    <Box>
-      <Box>
-        <SidebarContext.Provider
-          value={{
-            toggleSidebar,
-            setToggleSidebar,
-          }}
-        >
-          <Sidebar routes={routes} display="none" {...rest} />
-          <Box
-            float="right"
-            minHeight="100vh"
-            height="100%"
-            overflow="auto"
-            position="relative"
-            maxHeight="100%"
-            w={{ base: '100%', xl: 'calc( 100% - 290px )' }}
-            maxWidth={{ base: '100%', xl: 'calc( 100% - 290px )' }}
-            transition="all 0.33s cubic-bezier(0.685, 0.0473, 0.346, 1)"
-            transitionDuration=".2s, .2s, .35s"
-            transitionProperty="top, bottom, width"
-            transitionTimingFunction="linear, linear, ease"
-          >
-            <Portal>
-              <Box>
-                <Navbar
-                  onOpen={onOpen}
-                  logoText={'Horizon UI Dashboard PRO'}
-                  brandText={getActiveRoute(routes)}
-                  secondary={getActiveNavbar(routes)}
-                  message={getActiveNavbarText(routes)}
-                  fixed={fixed}
-                  {...rest}
-                />
-              </Box>
-            </Portal>
+const palette = {
+  shell: '#4e504d',
+  panel: '#0d0f0d',
+  panelDeep: '#070907',
+  border: '#353934',
+  text: '#f0f0e8',
+  muted: '#8b8e88',
+  green: '#8ac4a0',
+  red: '#c97777',
+};
 
-            {getRoute() ? (
-              <Box
-                mx="auto"
-                p={{ base: '20px', md: '30px' }}
-                pe="20px"
-                minH="100vh"
-                pt="50px"
-              >
-                <Routes>
-                  {getRoutes(routes)}
-                  <Route
-                    path="/"
-                    element={<Navigate to="/admin/default" replace />}
-                  />
-                </Routes>
-              </Box>
-            ) : null}
-            <Box>
-              <Footer />
+const navGroups = [
+  {
+    items: [
+      { icon: MdDashboard, label: 'Dashboard', path: '/admin/load-forecast' },
+      { icon: MdDirectionsCar, label: 'Tracking', path: '/admin/default' },
+      { icon: MdTaskAlt, label: 'Compliance', path: '/admin/data-tables' },
+      { icon: MdVerifiedUser, label: 'Assets', path: '/admin/nft-marketplace' },
+    ],
+  },
+];
+
+function SidebarItem({ item, active, expanded }) {
+  return (
+    <Flex
+      align="center"
+      as={Link}
+      bg={active ? 'rgba(255,255,255,0.08)' : 'transparent'}
+      borderLeft={active ? `2px solid ${palette.text}` : '2px solid transparent'}
+      color={active ? palette.text : '#9a9d96'}
+      gap={expanded ? '10px' : '0'}
+      h="40px"
+      justify={expanded ? 'flex-start' : 'center'}
+      px={expanded ? '16px' : '0'}
+      textDecoration="none"
+      to={item.path}
+      transition="background 0.2s ease"
+      _hover={{ bg: 'rgba(255,255,255,0.05)', color: palette.text }}
+    >
+      <Icon as={item.icon} boxSize="15px" />
+      <Text
+        display={expanded ? 'block' : 'none'}
+        fontSize="12px"
+        fontWeight={active ? '700' : '500'}
+        whiteSpace="nowrap"
+      >
+        {item.label}
+      </Text>
+      {item.badge ? (
+        <Badge
+          bg="rgba(138,196,160,0.18)"
+          borderRadius="8px"
+          color={palette.green}
+          display={expanded ? 'inline-flex' : 'none'}
+          fontSize="7px"
+          ml="auto"
+          px="5px"
+          textTransform="uppercase"
+        >
+          {item.badge}
+        </Badge>
+      ) : null}
+      {item.count ? (
+        <Flex
+          align="center"
+          bg="rgba(201,119,119,0.32)"
+          borderRadius="50%"
+          color="#f3b5b5"
+          display={expanded ? 'flex' : 'none'}
+          fontSize="9px"
+          h="18px"
+          justify="center"
+          ml="auto"
+          w="18px"
+        >
+          {item.count}
+        </Flex>
+      ) : null}
+    </Flex>
+  );
+}
+
+function AccountPanel({ expanded }) {
+  const [showLogout, setShowLogout] = useState(false);
+
+  return (
+    <Box
+      onMouseEnter={() => setShowLogout(true)}
+      onMouseLeave={() => setShowLogout(false)}
+      px={expanded ? '12px' : '0'}
+      pb="10px"
+    >
+      <Flex
+        align="center"
+        gap={expanded ? '10px' : '0'}
+        justify={expanded ? 'flex-start' : 'center'}
+        minH="40px"
+      >
+        <Avatar bg="rgba(255,255,255,0.09)" color={palette.text} icon={<Icon as={MdPerson} boxSize="18px" />} size="sm" />
+        <Box display={expanded ? 'block' : 'none'} minW="0">
+          <Text color={palette.text} fontSize="12px" fontWeight="700" noOfLines={1}>
+            Admin
+          </Text>
+          <Text color={palette.muted} fontSize="10px" noOfLines={1}>
+            Operator
+          </Text>
+        </Box>
+      </Flex>
+      <Flex
+        align="center"
+        bg="rgba(201,119,119,0.12)"
+        border={`1px solid rgba(201,119,119,0.22)`}
+        color="#f0a4a4"
+        cursor="pointer"
+        display={expanded && showLogout ? 'flex' : 'none'}
+        gap="8px"
+        h="34px"
+        mt="6px"
+        px="10px"
+        transition="background 0.2s ease"
+        _hover={{ bg: 'rgba(201,119,119,0.2)' }}
+      >
+        <Icon as={MdLogout} boxSize="15px" />
+        <Text fontSize="12px" fontWeight="600">
+          Logout
+        </Text>
+      </Flex>
+    </Box>
+  );
+}
+
+function FleetSidebar() {
+  const location = useLocation();
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <Flex
+      bg={`linear-gradient(100deg, ${palette.panelDeep} 0%, #0a0d0b 68%, #141814 100%)`}
+      borderRight={`1px solid ${palette.border}`}
+      alignSelf="stretch"
+      minH="100vh"
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+      overflow="hidden"
+      transition="width 0.22s ease"
+      w={expanded ? '224px' : '52px'}
+      flexShrink="0"
+    >
+      <Flex
+        direction="column"
+        h="100vh"
+        left="0"
+        position="fixed"
+        top="0"
+        w={expanded ? '224px' : '52px'}
+      >
+        <Flex
+          align="center"
+          gap={expanded ? '7px' : '0'}
+          h="58px"
+          justify={expanded ? 'flex-start' : 'center'}
+          px={expanded ? '12px' : '0'}
+        >
+          <Icon as={MdBolt} boxSize="30px" color={palette.text} flexShrink="0" />
+          <Text
+            color={palette.text}
+            display={expanded ? 'block' : 'none'}
+            fontSize="12px"
+            fontWeight="800"
+            whiteSpace="nowrap"
+          >
+            Power Load Monitoring
+          </Text>
+        </Flex>
+        <VStack align="stretch" flex="1" gap="0" minH="0">
+          {navGroups.slice(0, 3).map((group) => (
+            <Box key={group.title || 'main'} mb="8px">
+              {group.title ? (
+                <Flex
+                  align="center"
+                  color={palette.muted}
+                  display={expanded ? 'flex' : 'none'}
+                  fontSize="11px"
+                  justify="space-between"
+                  px="20px"
+                  py="9px"
+                >
+                  <Text>{group.title}</Text>
+                  <Text>^</Text>
+                </Flex>
+              ) : null}
+              {group.items.map((item) => (
+                <SidebarItem
+                  active={!item.passive && location.pathname === item.path}
+                  expanded={expanded}
+                  item={item}
+                  key={item.label}
+                />
+              ))}
             </Box>
+          ))}
+        </VStack>
+        <Box flexShrink="0" mt="auto">
+          <AccountPanel expanded={expanded} />
+        </Box>
+      </Flex>
+    </Flex>
+  );
+}
+
+function getRoutes(routeList) {
+  return routeList.map((route, key) => {
+    if (route.layout === '/admin') {
+      return <Route path={`${route.path}`} element={route.component} key={key} />;
+    }
+    if (route.collapse) {
+      return getRoutes(route.items);
+    }
+    return null;
+  });
+}
+
+export default function Dashboard() {
+  document.documentElement.dir = 'ltr';
+
+  return (
+    <Box bg={palette.shell} minH="100vh">
+      <Flex
+        bg={palette.panel}
+        border="0"
+        borderRadius="0"
+        boxShadow="inset 1px 0 0 rgba(255,255,255,0.03)"
+        direction={{ base: 'column', lg: 'row' }}
+        alignItems="stretch"
+        minH="100vh"
+        overflow="hidden"
+        w="100%"
+      >
+        <FleetSidebar />
+        <Box flex="1" minW="0">
+          <Box minH="100vh">
+            <Routes>
+              {getRoutes(routes)}
+              <Route path="/" element={<Navigate to="/admin/load-forecast" replace />} />
+            </Routes>
           </Box>
-        </SidebarContext.Provider>
-      </Box>
+        </Box>
+      </Flex>
     </Box>
   );
 }
