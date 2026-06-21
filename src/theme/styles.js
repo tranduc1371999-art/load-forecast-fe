@@ -83,14 +83,18 @@ export const globalStyles = {
       body: {
         overflowX: "hidden",
         bg: mode("secondaryGray.300", "navy.900")(props),
-        fontFamily: "DM Sans",
-        letterSpacing: "-0.5px",
+        fontFamily: "Roboto, Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+        fontFeatureSettings: "'cv02', 'cv03', 'cv04', 'cv11'",
+        letterSpacing: "0",
+        WebkitFontSmoothing: "antialiased",
+        MozOsxFontSmoothing: "grayscale",
+        textRendering: "geometricPrecision",
       },
       input: {
         color: "gray.700",
       },
       html: {
-        fontFamily: "DM Sans",
+        fontFamily: "Roboto, Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
       },
     }),
   },

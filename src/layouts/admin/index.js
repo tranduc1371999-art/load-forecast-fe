@@ -14,7 +14,6 @@ import {
   MdDirectionsCar,
   MdBolt,
   MdLogout,
-  MdPerson,
   MdTaskAlt,
   MdVerifiedUser,
 } from 'react-icons/md';
@@ -63,7 +62,7 @@ function SidebarItem({ item, active, expanded }) {
       <Text
         display={expanded ? 'block' : 'none'}
         fontSize="12px"
-        fontWeight={active ? '700' : '500'}
+        fontWeight={active ? '500' : '400'}
         whiteSpace="nowrap"
       >
         {item.label}
@@ -118,9 +117,16 @@ function AccountPanel({ expanded }) {
         justify={expanded ? 'flex-start' : 'center'}
         minH="40px"
       >
-        <Avatar bg="rgba(255,255,255,0.09)" color={palette.text} icon={<Icon as={MdPerson} boxSize="18px" />} size="sm" />
+        <Avatar
+          bg="rgba(255, 255, 255, 0.1)"
+          border="1px solid rgba(255, 255, 255, 0.24)"
+          boxShadow="0 8px 24px rgba(0,0,0,0.28)"
+          color="#f8fafc"
+          name="Đ"
+          size="sm"
+        />
         <Box display={expanded ? 'block' : 'none'} minW="0">
-          <Text color={palette.text} fontSize="12px" fontWeight="700" noOfLines={1}>
+          <Text color={palette.text} fontSize="12px" fontWeight="500" noOfLines={1}>
             Admin
           </Text>
           <Text color={palette.muted} fontSize="10px" noOfLines={1}>
@@ -143,7 +149,7 @@ function AccountPanel({ expanded }) {
         _hover={{ bg: 'rgba(201,119,119,0.2)' }}
       >
         <Icon as={MdLogout} boxSize="15px" />
-        <Text fontSize="12px" fontWeight="600">
+        <Text fontSize="12px" fontWeight="500">
           Logout
         </Text>
       </Flex>
@@ -188,7 +194,7 @@ function FleetSidebar() {
             color={palette.text}
             display={expanded ? 'block' : 'none'}
             fontSize="12px"
-            fontWeight="800"
+            fontWeight="500"
             whiteSpace="nowrap"
           >
             Power Load Monitoring
