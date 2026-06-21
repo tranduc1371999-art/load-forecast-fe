@@ -9,7 +9,8 @@ import {
   Text,
   VStack,
 } from "@chakra-ui/react";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { forecastApi } from "services/forecastApi";
 
 const palette = {
   border: "#3a3f39",
@@ -34,6 +35,156 @@ const aggressiveDrivers = [
   { name: "Davis W. (AV27-CBA)", yellow: 74, red: 22 },
 ];
 
+const defaultEfficiencyRows = [
+  { km: 46, fuel: 52 },
+  { km: 64, fuel: 49 },
+  { km: 61, fuel: 47 },
+  { km: 63, fuel: 62 },
+];
+
+const defaultMetrics = {
+  driversWithFlags: { value: 97, change: "+ 2.7%" },
+  alerts: { value: 184, change: "+ 4.5%" },
+  tasksProgress: { value: 194, total: 381 },
+};
+
+const defaultModelMetrics = {
+  mae: null,
+  rmse: null,
+  mape: null,
+};
+
+const forecastPeriods = [
+  { key: "hourly", label: "Hourly" },
+  { key: "daily", label: "Daily" },
+  { key: "monthly", label: "Monthly" },
+];
+
+function getValue(source, keys, fallback) {
+  if (!source || typeof source !== "object") return fallback;
+  const key = keys.find((item) => source[item] !== undefined && source[item] !== null);
+  return key ? source[key] : fallback;
+}
+
+function numberOrFallback(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function normalizeSeriesData(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => numberOrFallback(item, 0));
+  }
+
+  if (value && Array.isArray(value.data)) {
+    return value.data.map((item) => numberOrFallback(item, 0));
+  }
+
+  return null;
+}
+
+function findSeries(series, names, fallbackIndex) {
+  if (!Array.isArray(series)) return null;
+  const matched = series.find((item) =>
+    names.some((name) => String(item?.name || "").toLowerCase().includes(name)),
+  );
+  return normalizeSeriesData(matched || series[fallbackIndex]);
+}
+
+function getRecordNumber(record, keys) {
+  const value = getValue(record, keys, null);
+  return value === null ? null : numberOrFallback(value, null);
+}
+
+function buildSeriesFromRecords(records) {
+  if (!Array.isArray(records) || records.length === 0) return null;
+
+  const pairs = records
+    .map((record) => ({
+      actual: getRecordNumber(record, ["actual_load", "actualLoad", "Actual Load", "actual"]),
+      forecast: getRecordNumber(record, ["forecast_load", "forecastLoad", "Forecast Load", "forecast", "prediction"]),
+      timestamp: getValue(record, ["Timestamp", "timestamp", "time", "date"], ""),
+    }))
+    .filter((point) => point.actual !== null && point.forecast !== null);
+
+  const actual = pairs.map((point) => point.actual);
+  const forecast = pairs.map((point) => point.forecast);
+  const labels = pairs.map((point) => point.timestamp);
+
+  if (!actual.length || !forecast.length) return null;
+
+  return {
+    orange: actual,
+    red: forecast,
+    labels,
+  };
+}
+
+function normalizeForecastChart(rawBody) {
+  const records = Array.isArray(rawBody?.data) ? rawBody.data : Array.isArray(rawBody) ? rawBody : null;
+  const payload = rawBody || {};
+  const metrics = payload.metrics || payload.summary || {};
+  const chart = payload.behaviorSummary || payload.behavior || payload.mainChart || payload.chart || payload;
+  const series = chart.series || payload.series;
+  const recordSeries = buildSeriesFromRecords(records);
+  const orange = recordSeries?.orange || normalizeSeriesData(chart.orange) || findSeries(series, ["orange", "actual", "load"], 0);
+  const red = recordSeries?.red || normalizeSeriesData(chart.red) || findSeries(series, ["red", "forecast", "predict"], 1);
+  const activeFleetData = payload.activeFleet || payload.active_fleet;
+  const aggressiveDriversData = payload.aggressiveDrivers || payload.aggressive_drivers;
+  const efficiencyData = payload.driversEfficiency || payload.drivers_efficiency;
+
+  return {
+    metrics: {
+      driversWithFlags: {
+        value: numberOrFallback(
+          getValue(metrics, ["driversWithFlags", "drivers_with_flags", "flaggedDrivers"], undefined),
+          defaultMetrics.driversWithFlags.value,
+        ),
+        change: getValue(metrics, ["driversWithFlagsChange", "drivers_with_flags_change"], defaultMetrics.driversWithFlags.change),
+      },
+      alerts: {
+        value: numberOrFallback(getValue(metrics, ["alerts", "alertCount", "alert_count"], undefined), defaultMetrics.alerts.value),
+        change: getValue(metrics, ["alertsChange", "alerts_change"], defaultMetrics.alerts.change),
+      },
+      tasksProgress: {
+        value: numberOrFallback(getValue(metrics, ["tasksProgress", "tasks_progress", "completedTasks"], undefined), defaultMetrics.tasksProgress.value),
+        total: numberOrFallback(getValue(metrics, ["tasksTotal", "tasks_total", "totalTasks"], undefined), defaultMetrics.tasksProgress.total),
+      },
+    },
+    behaviorSeries: orange && red ? { orange, red, labels: recordSeries?.labels || [] } : null,
+    activeFleet: Array.isArray(activeFleetData)
+      ? activeFleetData.map((item, index) => ({
+          label: getValue(item, ["label", "name", "status"], activeFleet[index]?.label || `Status ${index + 1}`),
+          value: numberOrFallback(getValue(item, ["value", "percent", "percentage"], activeFleet[index]?.value || 0), 0),
+          color: getValue(item, ["color"], activeFleet[index]?.color || palette.green),
+        }))
+      : null,
+    aggressiveDrivers: Array.isArray(aggressiveDriversData)
+      ? aggressiveDriversData.map((item) => ({
+          name: getValue(item, ["name", "driver", "driverName"], "Unknown driver"),
+          yellow: numberOrFallback(getValue(item, ["yellow", "orange", "warning"], 0), 0),
+          red: numberOrFallback(getValue(item, ["red", "critical"], 0), 0),
+        }))
+      : null,
+    driversEfficiency: Array.isArray(efficiencyData)
+      ? efficiencyData.map((item) => ({
+          km: numberOrFallback(getValue(item, ["km", "kmPerDay", "km_per_day"], 0), 0),
+          fuel: numberOrFallback(getValue(item, ["fuel", "fuelPer100Km", "fuel_per_100_km"], 0), 0),
+        }))
+      : null,
+  };
+}
+
+function normalizeModelMetrics(rawBody) {
+  const payload = rawBody?.data || rawBody || {};
+
+  return {
+    mae: getRecordNumber(payload, ["MAE", "mae", "mean_absolute_error"]),
+    rmse: getRecordNumber(payload, ["RMSE", "rmse", "root_mean_squared_error"]),
+    mape: getRecordNumber(payload, ["MAPE", "mape", "mean_absolute_percentage_error"]),
+  };
+}
+
 function makeLinePath(values, width, height, padX = 0, padY = 0, max = 100, min = 0) {
   const innerWidth = width - padX * 2;
   const innerHeight = height - padY * 2;
@@ -54,6 +205,26 @@ function getPoint(values, index, width, height, padX, padY, max, min) {
   const normalized = (values[index] - min) / (max - min);
   const y = padY + (1 - normalized) * innerHeight;
   return { x, y };
+}
+
+function formatLoadValue(value) {
+  return Number(value).toLocaleString(undefined, {
+    maximumFractionDigits: 1,
+  });
+}
+
+function formatTimestampLabel(value) {
+  if (!value) return "";
+  const date = new Date(String(value).replace(" ", "T"));
+
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return date.toLocaleString([], {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "short",
+  });
 }
 
 function ChartMotionStyles() {
@@ -165,6 +336,34 @@ function MetricCard({ title, value, suffix, change, children }) {
   );
 }
 
+function ModelMetricCard({ title, value, suffix }) {
+  const displayValue = value === null || value === undefined ? "--" : formatLoadValue(value);
+
+  return (
+    <Box
+      bg="linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0))"
+      borderRight={{ base: "0", xl: `1px solid ${palette.border}` }}
+      boxShadow="inset 0 1px 0 rgba(255,255,255,0.035)"
+      minH="112px"
+      p="19px 20px"
+    >
+      <Text color={palette.muted} fontSize="11px">
+        {title}
+      </Text>
+      <HStack align="baseline" mt="12px" spacing="7px">
+        <Text color={palette.text} fontSize="30px" fontWeight="500" lineHeight="1">
+          {displayValue}
+        </Text>
+        {suffix ? (
+          <Text color={palette.muted} fontSize="11px">
+            {suffix}
+          </Text>
+        ) : null}
+      </HStack>
+    </Box>
+  );
+}
+
 function FlagBars() {
   const bars = [
     { label: "68%", color: palette.green, h: "78px", w: "66%" },
@@ -266,9 +465,9 @@ function SmallLineChart({ redZone = false, up = false }) {
   );
 }
 
-function MainBehaviorChart() {
+function MainBehaviorChart({ data }) {
   const [hoverIndex, setHoverIndex] = useState(null);
-  const seriesData = useMemo(() => buildMainSeries(), []);
+  const seriesData = useMemo(() => data || buildMainSeries(), [data]);
   const width = 880;
   const height = 264;
   const bars = useMemo(
@@ -283,11 +482,25 @@ function MainBehaviorChart() {
     () => Array.from({ length: 13 }, (_, index) => 62 + index * 71),
     [],
   );
-  const orangePath = makeLinePath(seriesData.orange, width, height, 29, 24, 50, 0);
-  const redPath = makeLinePath(seriesData.red, width, height, 29, 24, 50, 0);
-  const hoverOrange = hoverIndex === null ? null : getPoint(seriesData.orange, hoverIndex, width, height, 29, 24, 50, 0);
-  const hoverRed = hoverIndex === null ? null : getPoint(seriesData.red, hoverIndex, width, height, 29, 24, 50, 0);
-  const tooltipX = hoverOrange ? Math.min(Math.max(hoverOrange.x + 10, 36), width - 120) : 0;
+  const chartRange = useMemo(() => {
+    const values = [...seriesData.orange, ...seriesData.red];
+    const minValue = Math.min(...values);
+    const maxValue = Math.max(...values);
+    const padding = Math.max((maxValue - minValue) * 0.18, maxValue * 0.01, 1);
+
+    return {
+      max: Math.ceil(maxValue + padding),
+      min: Math.max(0, Math.floor(minValue - padding)),
+    };
+  }, [seriesData]);
+  const midValue = Math.round((chartRange.min + chartRange.max) / 2);
+  const firstLabel = formatTimestampLabel(seriesData.labels?.[0]) || "Start";
+  const lastLabel = formatTimestampLabel(seriesData.labels?.[seriesData.labels.length - 1]) || "End";
+  const orangePath = makeLinePath(seriesData.orange, width, height, 29, 24, chartRange.max, chartRange.min);
+  const redPath = makeLinePath(seriesData.red, width, height, 29, 24, chartRange.max, chartRange.min);
+  const hoverOrange = hoverIndex === null ? null : getPoint(seriesData.orange, hoverIndex, width, height, 29, 24, chartRange.max, chartRange.min);
+  const hoverRed = hoverIndex === null ? null : getPoint(seriesData.red, hoverIndex, width, height, 29, 24, chartRange.max, chartRange.min);
+  const tooltipX = hoverOrange ? Math.min(Math.max(hoverOrange.x + 10, 36), width - 158) : 0;
   const tooltipY = hoverOrange ? Math.max(Math.min(hoverOrange.y - 44, height - 70), 16) : 0;
 
   return (
@@ -325,12 +538,13 @@ function MainBehaviorChart() {
             y={218 - bar.h}
           />
         ))}
-        <text fill={palette.muted} fontSize="10" x="0" y="115">25%</text>
-        <text fill={palette.muted} fontSize="10" x="8" y="220">0</text>
+        <text fill={palette.muted} fontSize="10" x="0" y="18">{formatLoadValue(chartRange.max)}</text>
+        <text fill={palette.muted} fontSize="10" x="0" y="115">{formatLoadValue(midValue)}</text>
+        <text fill={palette.muted} fontSize="10" x="0" y="220">{formatLoadValue(chartRange.min)}</text>
         <path className="fleet-line" d={orangePath} fill="none" pathLength="1" stroke="#eee4aa" strokeOpacity="0.95" strokeWidth="1.35" />
         <path className="fleet-line fleet-line-secondary" d={redPath} fill="none" pathLength="1" stroke={palette.red} strokeOpacity="1" strokeWidth="1.35" />
-        <text fill={palette.muted} fontSize="10" x="566" y="244">2024</text>
-        <text fill={palette.muted} fontSize="10" x="832" y="244">May</text>
+        <text fill={palette.muted} fontSize="10" x="29" y="244">{firstLabel}</text>
+        <text fill={palette.muted} fontSize="10" textAnchor="end" x="858" y="244">{lastLabel}</text>
         {seriesData.orange.map((_, index) => (
           <rect
             fill="transparent"
@@ -349,28 +563,30 @@ function MainBehaviorChart() {
             <line stroke="#899087" strokeDasharray="2 3" strokeOpacity="0.96" strokeWidth="1" x1={hoverOrange.x} x2={hoverOrange.x} y1="12" y2="218" />
             <circle cx={hoverOrange.x} cy={hoverOrange.y} fill="#d5d0a3" r="3" stroke="#101110" strokeWidth="1.3" />
             <circle cx={hoverRed.x} cy={hoverRed.y} fill={palette.red} r="3" stroke="#101110" strokeWidth="1.3" />
-            <rect fill="#0b0d0b" height="52" opacity="0.97" rx="3" stroke={palette.border} width="108" x={tooltipX} y={tooltipY} />
-            <text fill={palette.text} fontSize="9" fontWeight="700" x={tooltipX + 8} y={tooltipY + 14}>{`Point ${hoverIndex + 1}`}</text>
-            <text fill="#eee4aa" fontSize="9" x={tooltipX + 8} y={tooltipY + 30}>{`Orange Flags ${seriesData.orange[hoverIndex]}%`}</text>
-            <text fill={palette.red} fontSize="9" x={tooltipX + 8} y={tooltipY + 43}>{`Red Flags ${seriesData.red[hoverIndex]}%`}</text>
+            <rect fill="#0b0d0b" height="56" opacity="0.97" rx="3" stroke={palette.border} width="146" x={tooltipX} y={tooltipY} />
+            <text fill={palette.text} fontSize="9" fontWeight="700" x={tooltipX + 8} y={tooltipY + 14}>
+              {formatTimestampLabel(seriesData.labels?.[hoverIndex]) || `Point ${hoverIndex + 1}`}
+            </text>
+            <text fill="#eee4aa" fontSize="9" x={tooltipX + 8} y={tooltipY + 31}>{`Actual ${formatLoadValue(seriesData.orange[hoverIndex])}`}</text>
+            <text fill={palette.red} fontSize="9" x={tooltipX + 8} y={tooltipY + 44}>{`Forecast ${formatLoadValue(seriesData.red[hoverIndex])}`}</text>
           </g>
         ) : null}
       </svg>
       <HStack bottom="2px" color={palette.muted} fontSize="10px" left="0" position="absolute" spacing="20px">
         <HStack spacing="5px">
           <Box bg="#eee4aa" borderRadius="50%" h="5px" w="5px" />
-          <Text>Orange Flags</Text>
+          <Text>Actual Load</Text>
         </HStack>
         <HStack spacing="5px">
           <Box bg={palette.red} borderRadius="50%" h="5px" w="5px" />
-          <Text>Red Flags</Text>
+          <Text>Forecast Load</Text>
         </HStack>
       </HStack>
     </Box>
   );
 }
 
-function ActiveFleet() {
+function ActiveFleet({ items = activeFleet }) {
   return (
     <Box
       bg="linear-gradient(180deg, rgba(255,255,255,0.022), rgba(255,255,255,0))"
@@ -383,12 +599,12 @@ function ActiveFleet() {
         Active Fleet &gt;
       </Text>
       <Flex gap="6px" mb="18px">
-        {activeFleet.map((item) => (
+        {items.map((item) => (
           <Box bg={item.color} flex={item.value} h="4px" key={item.label} opacity="0.95" />
         ))}
       </Flex>
       <VStack align="stretch" gap="10px">
-        {activeFleet.map((item) => (
+        {items.map((item) => (
           <Flex color={palette.muted} fontSize="12px" justify="space-between" key={item.label}>
             <HStack spacing="6px">
               <Box bg={item.color} borderRadius="50%" h="5px" w="5px" />
@@ -402,7 +618,7 @@ function ActiveFleet() {
   );
 }
 
-function AggressiveDrivers() {
+function AggressiveDrivers({ items = aggressiveDrivers }) {
   return (
     <Box
       bg="linear-gradient(180deg, rgba(255,255,255,0.022), rgba(255,255,255,0))"
@@ -420,7 +636,7 @@ function AggressiveDrivers() {
         </Text>
       </Flex>
       <VStack align="stretch" gap="10px">
-        {aggressiveDrivers.map((driver) => (
+        {items.map((driver) => (
           <Grid alignItems="center" gap="11px" gridTemplateColumns="1fr 68px 28px" key={driver.name}>
             <Text color={palette.muted} fontSize="11px" noOfLines={1}>
               {driver.name}
@@ -434,14 +650,7 @@ function AggressiveDrivers() {
   );
 }
 
-function DriversEfficiency() {
-  const rows = [
-    { km: 46, fuel: 52 },
-    { km: 64, fuel: 49 },
-    { km: 61, fuel: 47 },
-    { km: 63, fuel: 62 },
-  ];
-
+function DriversEfficiency({ rows = defaultEfficiencyRows }) {
   return (
     <Box bg="linear-gradient(180deg, rgba(255,255,255,0.022), rgba(255,255,255,0))" boxShadow="inset 0 1px 0 rgba(255,255,255,0.03)" minH="162px" p="19px 20px">
       <Flex align="center" justify="space-between" mb="13px">
@@ -474,50 +683,157 @@ function DriversEfficiency() {
   );
 }
 
+function ForecastChartPanel({ data, error, loading, title }) {
+  return (
+    <Box
+      bg="linear-gradient(180deg, rgba(255,255,255,0.018), rgba(255,255,255,0))"
+      borderBottom={`1px solid ${palette.border}`}
+      boxShadow="inset 0 1px 0 rgba(255,255,255,0.03)"
+      p="18px 20px 9px"
+    >
+      <Flex align="center" justify="space-between" mb="8px">
+        <Text color={palette.text} fontSize="14px" fontWeight="700">
+          {title}
+        </Text>
+        {loading ? (
+          <Text color={palette.yellow} fontSize="9px">
+            LOADING DATA
+          </Text>
+        ) : error ? (
+          <Text color={palette.red} fontSize="9px">
+            DATA UNAVAILABLE
+          </Text>
+        ) : (
+          <Text color={palette.green} fontSize="9px">
+            LIVE DATA
+          </Text>
+        )}
+      </Flex>
+      {error ? (
+        <Text color={palette.muted} fontSize="11px" mb="4px">
+          BE unavailable: {error}
+        </Text>
+      ) : null}
+      {data ? (
+        <MainBehaviorChart data={data} />
+      ) : (
+        <Flex align="center" h={{ base: "300px", lg: "258px" }} justify="center">
+          <Text color={palette.muted} fontSize="12px">
+            {loading ? "Loading forecast data..." : "No forecast data to display"}
+          </Text>
+        </Flex>
+      )}
+    </Box>
+  );
+}
+
 export default function LoadForecastDashboard() {
+  const [chartDataByPeriod, setChartDataByPeriod] = useState({
+    daily: null,
+    hourly: null,
+    monthly: null,
+  });
+  const [chartErrors, setChartErrors] = useState({});
+  const [modelMetrics, setModelMetrics] = useState(defaultModelMetrics);
+  const [apiState, setApiState] = useState({
+    error: "",
+    loadedAt: null,
+    loading: true,
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadMetrics() {
+      try {
+        const { body } = await forecastApi.getMetrics();
+        if (!isMounted) return;
+
+        setModelMetrics(normalizeModelMetrics(body));
+      } catch (error) {
+        if (!isMounted) return;
+
+        setModelMetrics(defaultModelMetrics);
+      }
+    }
+
+    loadMetrics();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadForecastCharts() {
+      setApiState({
+        error: "",
+        loadedAt: null,
+        loading: true,
+      });
+
+      const results = await Promise.allSettled(
+        forecastPeriods.map(async (item) => {
+          const { body } = await forecastApi.getChart(item.key);
+          return [item.key, normalizeForecastChart(body).behaviorSeries];
+        }),
+      );
+
+      if (!isMounted) return;
+
+      const nextData = {};
+      const nextErrors = {};
+
+      results.forEach((result, index) => {
+        const key = forecastPeriods[index].key;
+
+        if (result.status === "fulfilled") {
+          const [, data] = result.value;
+          nextData[key] = data;
+          if (!data) nextErrors[key] = "No valid actual_load / forecast_load data";
+        } else {
+          nextData[key] = null;
+          nextErrors[key] = result.reason?.message || "Can not load forecast data";
+        }
+      });
+
+      setChartDataByPeriod(nextData);
+      setChartErrors(nextErrors);
+      setApiState({
+        error: Object.keys(nextErrors).length ? "Some charts failed to load" : "",
+        loadedAt: new Date(),
+        loading: false,
+      });
+    }
+
+    loadForecastCharts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
     <Box>
       <SimpleGrid borderBottom={`1px solid ${palette.border}`} boxShadow="0 1px 0 rgba(255,255,255,0.025)" columns={{ base: 1, md: 3 }}>
-        <MetricCard change="+ 2.7%" title="Drivers with Flags" value="97">
-          <FlagBars />
-        </MetricCard>
-        <MetricCard change="+ 4.5%" title="Alerts" value="184">
-          <SmallLineChart redZone />
-        </MetricCard>
-        <MetricCard suffix="/ 381" title="Tasks Progress" value="194">
-          <SmallLineChart up />
-        </MetricCard>
+        <ModelMetricCard title="MAE" value={modelMetrics.mae} />
+        <ModelMetricCard title="RMSE" value={modelMetrics.rmse} />
+        <ModelMetricCard suffix="%" title="MAPE" value={modelMetrics.mape} />
       </SimpleGrid>
 
-      <Box
-        bg="linear-gradient(180deg, rgba(255,255,255,0.018), rgba(255,255,255,0))"
-        borderBottom={`1px solid ${palette.border}`}
-        boxShadow="inset 0 1px 0 rgba(255,255,255,0.03)"
-        p="18px 20px 9px"
-      >
-        <Flex align="center" justify="space-between" mb="8px">
-          <Text color={palette.text} fontSize="14px" fontWeight="700">
-            Behavioral Summary Chart
-          </Text>
-          <HStack color={palette.muted} fontSize="9px" spacing="28px">
-            <Text>+ ADD FILTER</Text>
-            <Text>LAST YEAR +</Text>
-          </HStack>
-        </Flex>
-        <MainBehaviorChart />
+      <Box px="0">
+        {forecastPeriods.map((item) => (
+          <ForecastChartPanel
+            data={chartDataByPeriod[item.key]}
+            error={chartErrors[item.key]}
+            key={item.key}
+            loading={apiState.loading}
+            title={`${item.label} Load Forecast Chart`}
+          />
+        ))}
       </Box>
-
-      <Grid templateColumns={{ base: "1fr", xl: "1fr 1fr 1.1fr" }}>
-        <GridItem>
-          <ActiveFleet />
-        </GridItem>
-        <GridItem>
-          <AggressiveDrivers />
-        </GridItem>
-        <GridItem>
-          <DriversEfficiency />
-        </GridItem>
-      </Grid>
     </Box>
   );
 }
