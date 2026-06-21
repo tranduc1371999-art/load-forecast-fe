@@ -154,8 +154,8 @@ function normalizeForecastChart(rawBody) {
   };
 }
 
-function makeLinePath(values, width, height, padX = 0, padY = 0, max = 100, min = 0) {
-  const innerWidth = width - padX * 2;
+function makeLinePath(values, width, height, padX = 0, padY = 0, max = 100, min = 0, padRight = padX) {
+  const innerWidth = width - padX - padRight;
   const innerHeight = height - padY * 2;
   return values
     .map((value, index) => {
@@ -167,14 +167,14 @@ function makeLinePath(values, width, height, padX = 0, padY = 0, max = 100, min 
     .join(" ");
 }
 
-function makeAreaPath(linePath, width, height, padX = 0, padY = 0) {
+function makeAreaPath(linePath, width, height, padX = 0, padY = 0, padRight = padX) {
   if (!linePath) return "";
 
-  return `${linePath} L ${width - padX} ${height - padY} L ${padX} ${height - padY} Z`;
+  return `${linePath} L ${width - padRight} ${height - padY} L ${padX} ${height - padY} Z`;
 }
 
-function getPoint(values, index, width, height, padX, padY, max, min) {
-  const innerWidth = width - padX * 2;
+function getPoint(values, index, width, height, padX, padY, max, min, padRight = padX) {
+  const innerWidth = width - padX - padRight;
   const innerHeight = height - padY * 2;
   const x = padX + (index / Math.max(values.length - 1, 1)) * innerWidth;
   const normalized = (values[index] - min) / (max - min);
@@ -282,7 +282,8 @@ function MainBehaviorChart({ data, showActual = true, theme }) {
   const width = 880;
   const height = 264;
   const padX = 48;
-  const rightX = 858;
+  const padRight = 10;
+  const rightX = width - padRight;
   const chartRange = useMemo(() => {
     const values = hasActual ? [...actualValues, ...forecastValues] : [...forecastValues];
     const minValue = Math.min(...values);
@@ -297,11 +298,11 @@ function MainBehaviorChart({ data, showActual = true, theme }) {
   const midValue = Math.round((chartRange.min + chartRange.max) / 2);
   const firstLabel = formatTimestampLabel(seriesData.labels?.[0]) || "Start";
   const lastLabel = formatTimestampLabel(seriesData.labels?.[seriesData.labels.length - 1]) || "End";
-  const actualPath = hasActual ? makeLinePath(actualValues, width, height, padX, 24, chartRange.max, chartRange.min) : "";
-  const forecastPath = makeLinePath(forecastValues, width, height, padX, 24, chartRange.max, chartRange.min);
-  const forecastAreaPath = makeAreaPath(forecastPath, width, height, padX, 24);
-  const hoverActual = hasActual && hoverIndex !== null ? getPoint(actualValues, hoverIndex, width, height, padX, 24, chartRange.max, chartRange.min) : null;
-  const hoverForecast = hoverIndex === null ? null : getPoint(forecastValues, hoverIndex, width, height, padX, 24, chartRange.max, chartRange.min);
+  const actualPath = hasActual ? makeLinePath(actualValues, width, height, padX, 24, chartRange.max, chartRange.min, padRight) : "";
+  const forecastPath = makeLinePath(forecastValues, width, height, padX, 24, chartRange.max, chartRange.min, padRight);
+  const forecastAreaPath = makeAreaPath(forecastPath, width, height, padX, 24, padRight);
+  const hoverActual = hasActual && hoverIndex !== null ? getPoint(actualValues, hoverIndex, width, height, padX, 24, chartRange.max, chartRange.min, padRight) : null;
+  const hoverForecast = hoverIndex === null ? null : getPoint(forecastValues, hoverIndex, width, height, padX, 24, chartRange.max, chartRange.min, padRight);
   const gradientKey = theme.line.replace("#", "");
   const strokeGradientId = `forecastStroke-${gradientKey}`;
   const areaGradientId = `forecastArea-${gradientKey}`;
@@ -313,8 +314,8 @@ function MainBehaviorChart({ data, showActual = true, theme }) {
       .map((_, index) => index)
       .filter((index) => index % step === 0)
       .slice(0, maxGuides)
-      .map((index) => getPoint(forecastValues, index, width, height, padX, 24, chartRange.max, chartRange.min));
-  }, [chartRange.max, chartRange.min, forecastValues, height, width]);
+      .map((index) => getPoint(forecastValues, index, width, height, padX, 24, chartRange.max, chartRange.min, padRight));
+  }, [chartRange.max, chartRange.min, forecastValues, height, padRight, width]);
   const tooltipWidth = 146;
   const tooltipX = hoverForecast ? Math.min(Math.max(hoverForecast.x + 10, 36), width - tooltipWidth - 12) : 0;
   const tooltipY = hoverForecast ? Math.max(Math.min(hoverForecast.y - 44, height - 70), 16) : 0;
@@ -443,7 +444,7 @@ function MainBehaviorChart({ data, showActual = true, theme }) {
         <Text bottom="0" left="48px" position="absolute">
           {firstLabel}
         </Text>
-        <Text bottom="0" position="absolute" right="22px">
+        <Text bottom="0" position="absolute" right="0">
           {lastLabel}
         </Text>
       </Box>
@@ -504,11 +505,7 @@ function ForecastChartPanel({ data, error, loading, showActual = true, theme, ti
           <Text color={palette.red} fontSize="7.5px" fontWeight="500" letterSpacing="0">
             DATA UNAVAILABLE
           </Text>
-        ) : (
-          <Text color="#5ee0a0" fontSize="7.5px" fontWeight="500" letterSpacing="0">
-            LIVE DATA
-          </Text>
-        )}
+        ) : null}
       </Flex>
       {error ? (
         <Text color={palette.muted} fontSize="10px" mb="4px" position="relative" zIndex="1">

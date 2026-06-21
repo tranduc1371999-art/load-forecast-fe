@@ -2,6 +2,7 @@ import React from 'react';
 
 import { Icon } from '@chakra-ui/react';
 import {
+  MdAnalytics,
   MdBarChart,
   MdPerson,
   MdHome,
@@ -13,6 +14,7 @@ import {
 // Admin Imports
 import MainDashboard from 'views/admin/default';
 import LoadForecast from 'views/admin/loadForecast';
+import MetricsDashboard from 'views/admin/metrics';
 import NFTMarketplace from 'views/admin/marketplace';
 import Profile from 'views/admin/profile';
 import DataTables from 'views/admin/dataTables';
@@ -35,6 +37,21 @@ const routes = [
     path: '/load-forecast',
     icon: <Icon as={MdShowChart} width="20px" height="20px" color="inherit" />,
     component: <LoadForecast />,
+  },
+  {
+    name: 'Metrics',
+    layout: '/admin',
+    path: '/metrics',
+    icon: (
+      <Icon
+        as={MdAnalytics}
+        width="20px"
+        height="20px"
+        color="inherit"
+      />
+    ),
+    component: <MetricsDashboard />,
+    secondary: true,
   },
   {
     name: 'NFT Marketplace',

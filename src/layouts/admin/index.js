@@ -10,12 +10,12 @@ import {
 import React, { useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import {
+  MdAnalytics,
   MdDashboard,
-  MdDirectionsCar,
   MdBolt,
+  MdDataset,
   MdLogout,
-  MdTaskAlt,
-  MdVerifiedUser,
+  MdShowChart,
 } from 'react-icons/md';
 import routes from 'routes.js';
 
@@ -34,9 +34,9 @@ const navGroups = [
   {
     items: [
       { icon: MdDashboard, label: 'Dashboard', path: '/admin/load-forecast' },
-      { icon: MdDirectionsCar, label: 'Tracking', path: '/admin/default' },
-      { icon: MdTaskAlt, label: 'Compliance', path: '/admin/data-tables' },
-      { icon: MdVerifiedUser, label: 'Assets', path: '/admin/nft-marketplace' },
+      { icon: MdShowChart, label: 'Forecast', path: '/admin/default' },
+      { icon: MdDataset, label: 'Data', path: '/admin/data-tables' },
+      { icon: MdAnalytics, label: 'Metrics', path: '/admin/metrics' },
     ],
   },
 ];
@@ -127,7 +127,7 @@ function AccountPanel({ expanded }) {
         />
         <Box display={expanded ? 'block' : 'none'} minW="0">
           <Text color={palette.text} fontSize="12px" fontWeight="500" noOfLines={1}>
-            Admin
+            Trần Đình Đức
           </Text>
           <Text color={palette.muted} fontSize="10px" noOfLines={1}>
             Operator
