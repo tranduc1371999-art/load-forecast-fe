@@ -1,13 +1,8 @@
 import {
-  Badge,
   Box,
   Flex,
-  Grid,
-  GridItem,
   HStack,
-  SimpleGrid,
   Text,
-  VStack,
 } from "@chakra-ui/react";
 import React, { useEffect, useMemo, useState } from "react";
 import { forecastApi } from "services/forecastApi";
@@ -16,48 +11,15 @@ const palette = {
   border: "#3a3f39",
   text: "#fbfbf2",
   muted: "#a6aaa1",
-  faint: "#6b7068",
   green: "#9fdcb5",
   yellow: "#ecd083",
   red: "#e08b8b",
 };
 
-const activeFleet = [
-  { label: "On Route", value: 87, color: palette.green },
-  { label: "Break", value: 8, color: palette.yellow },
-  { label: "Connection Lost", value: 5, color: palette.red },
-];
-
-const aggressiveDrivers = [
-  { name: "Andrew L. (853-CDE)", yellow: 83, red: 28 },
-  { name: "Jason S. (AB12-CDE)", yellow: 62, red: 34 },
-  { name: "Eugene M. (753-CBA)", yellow: 68, red: 24 },
-  { name: "Davis W. (AV27-CBA)", yellow: 74, red: 22 },
-];
-
-const defaultEfficiencyRows = [
-  { km: 46, fuel: 52 },
-  { km: 64, fuel: 49 },
-  { km: 61, fuel: 47 },
-  { km: 63, fuel: 62 },
-];
-
-const defaultMetrics = {
-  driversWithFlags: { value: 97, change: "+ 2.7%" },
-  alerts: { value: 184, change: "+ 4.5%" },
-  tasksProgress: { value: 194, total: 381 },
-};
-
-const defaultModelMetrics = {
-  mae: null,
-  rmse: null,
-  mape: null,
-};
-
 const forecastPeriods = [
-  { key: "hourly", label: "Hourly" },
-  { key: "daily", label: "Daily" },
-  { key: "monthly", label: "Monthly" },
+  { key: "shortTermHourly", label: "Short-Term Hourly" },
+  { key: "mediumTermDaily", label: "Medium-Term Daily" },
+  { key: "longTermMonthly", label: "Long-Term Monthly" },
 ];
 
 const FORECAST_REFRESH_DELAY_MS = 30 * 1000;
@@ -154,7 +116,6 @@ function buildSeriesFromRecords(records) {
 function normalizeForecastChart(rawBody) {
   const records = Array.isArray(rawBody?.data) ? rawBody.data : Array.isArray(rawBody) ? rawBody : null;
   const payload = rawBody || {};
-  const metrics = payload.metrics || payload.summary || {};
   const chart = payload.behaviorSummary || payload.behavior || payload.mainChart || payload.chart || payload;
   const series = chart.series || payload.series;
   const recordSeries = buildSeriesFromRecords(records);
@@ -169,28 +130,8 @@ function normalizeForecastChart(rawBody) {
     normalizeSeriesData(chart.actual) ||
     normalizeSeriesData(chart.orange) ||
     findSeries(series, ["actual"], 0);
-  const activeFleetData = payload.activeFleet || payload.active_fleet;
-  const aggressiveDriversData = payload.aggressiveDrivers || payload.aggressive_drivers;
-  const efficiencyData = payload.driversEfficiency || payload.drivers_efficiency;
 
   return {
-    metrics: {
-      driversWithFlags: {
-        value: numberOrFallback(
-          getValue(metrics, ["driversWithFlags", "drivers_with_flags", "flaggedDrivers"], undefined),
-          defaultMetrics.driversWithFlags.value,
-        ),
-        change: getValue(metrics, ["driversWithFlagsChange", "drivers_with_flags_change"], defaultMetrics.driversWithFlags.change),
-      },
-      alerts: {
-        value: numberOrFallback(getValue(metrics, ["alerts", "alertCount", "alert_count"], undefined), defaultMetrics.alerts.value),
-        change: getValue(metrics, ["alertsChange", "alerts_change"], defaultMetrics.alerts.change),
-      },
-      tasksProgress: {
-        value: numberOrFallback(getValue(metrics, ["tasksProgress", "tasks_progress", "completedTasks"], undefined), defaultMetrics.tasksProgress.value),
-        total: numberOrFallback(getValue(metrics, ["tasksTotal", "tasks_total", "totalTasks"], undefined), defaultMetrics.tasksProgress.total),
-      },
-    },
     behaviorSeries: forecast
       ? {
           actual,
@@ -198,36 +139,6 @@ function normalizeForecastChart(rawBody) {
           labels: recordSeries?.labels || [],
         }
       : null,
-    activeFleet: Array.isArray(activeFleetData)
-      ? activeFleetData.map((item, index) => ({
-          label: getValue(item, ["label", "name", "status"], activeFleet[index]?.label || `Status ${index + 1}`),
-          value: numberOrFallback(getValue(item, ["value", "percent", "percentage"], activeFleet[index]?.value || 0), 0),
-          color: getValue(item, ["color"], activeFleet[index]?.color || palette.green),
-        }))
-      : null,
-    aggressiveDrivers: Array.isArray(aggressiveDriversData)
-      ? aggressiveDriversData.map((item) => ({
-          name: getValue(item, ["name", "driver", "driverName"], "Unknown driver"),
-          yellow: numberOrFallback(getValue(item, ["yellow", "orange", "warning"], 0), 0),
-          red: numberOrFallback(getValue(item, ["red", "critical"], 0), 0),
-        }))
-      : null,
-    driversEfficiency: Array.isArray(efficiencyData)
-      ? efficiencyData.map((item) => ({
-          km: numberOrFallback(getValue(item, ["km", "kmPerDay", "km_per_day"], 0), 0),
-          fuel: numberOrFallback(getValue(item, ["fuel", "fuelPer100Km", "fuel_per_100_km"], 0), 0),
-        }))
-      : null,
-  };
-}
-
-function normalizeModelMetrics(rawBody) {
-  const payload = rawBody?.metrics || rawBody?.data?.metrics || rawBody?.data || rawBody || {};
-
-  return {
-    mae: getRecordNumber(payload, ["MAE", "mae", "mean_absolute_error"]),
-    rmse: getRecordNumber(payload, ["RMSE", "rmse", "root_mean_squared_error"]),
-    mape: getRecordNumber(payload, ["MAPE", "mape", "mean_absolute_percentage_error"]),
   };
 }
 
@@ -345,185 +256,6 @@ function buildMainSeries() {
   }
 
   return { orange, red };
-}
-
-function ThinBar({ color, value }) {
-  return (
-    <Box bg="#2a2e29" h="4px" overflow="hidden" position="relative" w="100%">
-      <Box bg={color} h="100%" opacity="1" w={`${value}%`} />
-      <Box bg="#0f110f" bottom="0" left="0" opacity="0.22" position="absolute" top="0" w="100%" />
-    </Box>
-  );
-}
-
-function MetricCard({ title, value, suffix, change, children }) {
-  return (
-    <Box
-      bg="linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0))"
-      borderRight={{ base: "0", xl: `1px solid ${palette.border}` }}
-      boxShadow="inset 0 1px 0 rgba(255,255,255,0.035)"
-      minH="188px"
-      p="19px 20px"
-    >
-      <Flex align="start" justify="space-between">
-        <Box>
-          <Text color={palette.muted} fontSize="11px">
-            {title}
-          </Text>
-          <HStack align="baseline" mt="5px" spacing="7px">
-            <Text color={palette.text} fontSize="24px" fontWeight="500" lineHeight="1">
-              {value}
-            </Text>
-            {suffix ? (
-              <Text color={palette.text} fontSize="11px">
-                {suffix}
-              </Text>
-            ) : null}
-            {change ? (
-              <Badge bg="rgba(138,196,160,0.18)" color={change.includes("-") ? palette.red : palette.green} fontSize="9px">
-                {change}
-              </Badge>
-            ) : null}
-          </HStack>
-        </Box>
-        <Text color={palette.muted} fontSize="9px">
-          TODAY +
-        </Text>
-      </Flex>
-      <Box h="116px" mt="15px">
-        {children}
-      </Box>
-    </Box>
-  );
-}
-
-function ModelMetricCard({ title, value, suffix }) {
-  const displayValue = value === null || value === undefined ? "--" : formatLoadValue(value);
-
-  return (
-    <Box
-      bg="linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0))"
-      borderRight={{ base: "0", xl: `1px solid ${palette.border}` }}
-      boxShadow="inset 0 1px 0 rgba(255,255,255,0.035)"
-      minH="112px"
-      p="19px 20px"
-    >
-      <Text color={palette.muted} fontSize="11px">
-        {title}
-      </Text>
-      <HStack align="baseline" mt="12px" spacing="7px">
-        <Text color={palette.text} fontSize="30px" fontWeight="500" lineHeight="1">
-          {displayValue}
-        </Text>
-        {suffix ? (
-          <Text color={palette.muted} fontSize="11px">
-            {suffix}
-          </Text>
-        ) : null}
-      </HStack>
-    </Box>
-  );
-}
-
-function FlagBars() {
-  const bars = [
-    { label: "68%", color: palette.green, h: "78px", w: "66%" },
-    { label: "17%", color: palette.yellow, h: "78px", w: "15%" },
-    { label: "15%", color: palette.red, h: "78px", w: "11%" },
-  ];
-
-  return (
-    <Flex align="end" gap="8px" h="100%">
-      {bars.map((bar) => (
-        <Box flex={bar.w} key={bar.label}>
-          <Text color={palette.text} fontSize="10px" mb="5px">
-            {bar.label}
-          </Text>
-          <Box borderLeft={`1px solid ${palette.faint}`} h={bar.h} position="relative">
-            <Box bg="#30352f" bottom="0" h="4px" left="0" opacity="1" position="absolute" right="0" />
-            <Box bg={bar.color} bottom="0" h="3px" left="0" opacity="1" position="absolute" right="0" />
-          </Box>
-        </Box>
-      ))}
-    </Flex>
-  );
-}
-
-function SmallLineChart({ redZone = false, up = false }) {
-  const [hoverIndex, setHoverIndex] = useState(null);
-  const main = up
-    ? [8, 9, 12, 13, 18, 20, 24, 28, 32, 36, 39, 42, 48, 51, 53, 55, 55, 56, 56, 59, 61, 63, 67, 72, 74, 76, 84, 95]
-    : [12, 14, 18, 13, 52, 16, 18, 20, 21, 19, 16, 22, 17, 20, 18, 15, 19, 17, 16, 20, 19, 18, 21, 55, 17, 22, 17, 14];
-  const secondary = up
-    ? [6, 8, 9, 11, 16, 20, 22, 25, 30, 35, 39, 43, 47, 52, 57, 61, 66, 69, 71, 73, 76, 79, 82, 86, 90, 93, 96, 100]
-    : [6, 8, 12, 9, 26, 11, 13, 17, 32, 15, 18, 16, 20, 19, 14, 15, 12, 13, 20, 18, 17, 14, 11, 16, 15, 13, 18, 9];
-  const width = 292;
-  const height = 104;
-  const mainPath = makeLinePath(main, width, height, 24, 8, 100, 0);
-  const secondaryPath = makeLinePath(secondary, width, height, 24, 8, 100, 0);
-  const hoverMain = hoverIndex === null ? null : getPoint(main, hoverIndex, width, height, 24, 8, 100, 0);
-  const hoverSecondary = hoverIndex === null ? null : getPoint(secondary, hoverIndex, width, height, 24, 8, 100, 0);
-  const tooltipX = hoverMain ? Math.min(Math.max(hoverMain.x - 35, 6), width - 76) : 0;
-  const tooltipY = hoverMain ? Math.max(Math.min(hoverMain.y - 38, height - 38), 4) : 0;
-  const redRects = redZone
-    ? [
-        { x: 76, width: 10 },
-        { x: 245, width: 12 },
-      ]
-    : [{ x: 116, width: 56 }];
-
-  return (
-    <Box h="100%" position="relative">
-      <ChartMotionStyles />
-      <svg className="fleet-chart" height="100%" preserveAspectRatio="none" viewBox={`0 0 ${width} ${height}`} width="100%">
-        <line stroke="#363c35" strokeDasharray="3 5" strokeWidth="1" x1="24" x2="292" y1="21" y2="21" />
-        <line stroke="#363c35" strokeDasharray="3 5" strokeWidth="1" x1="24" x2="292" y1="52" y2="52" />
-        <line stroke="#363c35" strokeDasharray="3 5" strokeWidth="1" x1="24" x2="292" y1="85" y2="85" />
-        {redRects.map((rect) => (
-          <rect fill={palette.red} fillOpacity="0.18" height="73" key={rect.x} width={rect.width} x={rect.x} y="15" />
-        ))}
-        {redZone ? (
-          <path d="M 52 85 L 76 30 L 100 86 Z" fill="#8a8f86" fillOpacity="0.36" />
-        ) : null}
-        <text fill={palette.muted} fontSize="9" x="0" y="23">100%</text>
-        <text fill={palette.muted} fontSize="9" x="5" y="54">50%</text>
-        <text fill={palette.muted} fontSize="9" x="13" y="88">0</text>
-        {!redZone ? (
-          <text fill={palette.text} fontSize="9" fontWeight="700" x="184" y="24">51%</text>
-        ) : null}
-        <path className="fleet-line" d={secondaryPath} fill="none" pathLength="1" stroke="#eee4aa" strokeOpacity="0.9" strokeWidth="1.25" />
-        <path className="fleet-line fleet-line-secondary" d={mainPath} fill="none" pathLength="1" stroke={palette.green} strokeOpacity="0.92" strokeWidth="1.35" />
-        {!redZone ? (
-          <line stroke={palette.red} strokeDasharray="3 3" strokeWidth="1" x1="194" x2="194" y1="15" y2="88" />
-        ) : (
-          <line stroke="#5f625b" strokeDasharray="2 3" strokeWidth="1" x1="284" x2="284" y1="15" y2="88" />
-        )}
-        {main.map((_, index) => (
-          <rect
-            fill="transparent"
-            height={height}
-            key={index}
-            onMouseEnter={() => setHoverIndex(index)}
-            onMouseMove={() => setHoverIndex(index)}
-            onMouseLeave={() => setHoverIndex(null)}
-            width={width / main.length}
-            x={(index / main.length) * width}
-            y="0"
-          />
-        ))}
-        {hoverMain && hoverSecondary ? (
-          <g pointerEvents="none">
-            <line stroke="#899087" strokeDasharray="2 3" strokeOpacity="0.95" strokeWidth="1" x1={hoverMain.x} x2={hoverMain.x} y1="12" y2="90" />
-            <circle cx={hoverSecondary.x} cy={hoverSecondary.y} fill="#d5d0a3" r="2.4" stroke="#101110" strokeWidth="1" />
-            <circle cx={hoverMain.x} cy={hoverMain.y} fill={palette.green} r="2.4" stroke="#101110" strokeWidth="1" />
-            <rect fill="#0b0d0b" height="31" opacity="0.96" rx="2" stroke={palette.border} width="70" x={tooltipX} y={tooltipY} />
-            <text fill="#eee4aa" fontSize="8" x={tooltipX + 6} y={tooltipY + 12}>{`Line A ${secondary[hoverIndex]}%`}</text>
-            <text fill={palette.green} fontSize="8" x={tooltipX + 6} y={tooltipY + 24}>{`Line B ${main[hoverIndex]}%`}</text>
-          </g>
-        ) : null}
-      </svg>
-    </Box>
-  );
 }
 
 function MainBehaviorChart({ data, showActual = true }) {
@@ -663,103 +395,6 @@ function MainBehaviorChart({ data, showActual = true }) {
   );
 }
 
-function ActiveFleet({ items = activeFleet }) {
-  return (
-    <Box
-      bg="linear-gradient(180deg, rgba(255,255,255,0.022), rgba(255,255,255,0))"
-      borderRight={{ base: "0", xl: `1px solid ${palette.border}` }}
-      boxShadow="inset 0 1px 0 rgba(255,255,255,0.03)"
-      minH="162px"
-      p="19px 20px"
-    >
-      <Text color={palette.text} fontSize="14px" fontWeight="700" mb="18px">
-        Active Fleet &gt;
-      </Text>
-      <Flex gap="6px" mb="18px">
-        {items.map((item) => (
-          <Box bg={item.color} flex={item.value} h="4px" key={item.label} opacity="0.95" />
-        ))}
-      </Flex>
-      <VStack align="stretch" gap="10px">
-        {items.map((item) => (
-          <Flex color={palette.muted} fontSize="12px" justify="space-between" key={item.label}>
-            <HStack spacing="6px">
-              <Box bg={item.color} borderRadius="50%" h="5px" w="5px" />
-              <Text>{item.label}</Text>
-            </HStack>
-            <Text color={palette.text}>{item.value}%</Text>
-          </Flex>
-        ))}
-      </VStack>
-    </Box>
-  );
-}
-
-function AggressiveDrivers({ items = aggressiveDrivers }) {
-  return (
-    <Box
-      bg="linear-gradient(180deg, rgba(255,255,255,0.022), rgba(255,255,255,0))"
-      borderRight={{ base: "0", xl: `1px solid ${palette.border}` }}
-      boxShadow="inset 0 1px 0 rgba(255,255,255,0.03)"
-      minH="162px"
-      p="19px 20px"
-    >
-      <Flex align="center" justify="space-between" mb="15px">
-        <Text color={palette.text} fontSize="14px" fontWeight="700">
-          Top Aggressive Drivers &gt;
-        </Text>
-        <Text color={palette.muted} fontSize="9px">
-          LAST WEEK +
-        </Text>
-      </Flex>
-      <VStack align="stretch" gap="10px">
-        {items.map((driver) => (
-          <Grid alignItems="center" gap="11px" gridTemplateColumns="1fr 68px 28px" key={driver.name}>
-            <Text color={palette.muted} fontSize="11px" noOfLines={1}>
-              {driver.name}
-            </Text>
-            <ThinBar color={palette.yellow} value={driver.yellow} />
-            <ThinBar color={palette.red} value={driver.red} />
-          </Grid>
-        ))}
-      </VStack>
-    </Box>
-  );
-}
-
-function DriversEfficiency({ rows = defaultEfficiencyRows }) {
-  return (
-    <Box bg="linear-gradient(180deg, rgba(255,255,255,0.022), rgba(255,255,255,0))" boxShadow="inset 0 1px 0 rgba(255,255,255,0.03)" minH="162px" p="19px 20px">
-      <Flex align="center" justify="space-between" mb="13px">
-        <Text color={palette.text} fontSize="14px" fontWeight="700">
-          Drivers' Efficiency
-        </Text>
-        <Text color={palette.muted} fontSize="9px">
-          LAST MONTH +
-        </Text>
-      </Flex>
-      <HStack color={palette.muted} fontSize="10px" justify="center" mb="7px" spacing="18px">
-        <HStack spacing="5px">
-          <Box bg={palette.yellow} borderRadius="50%" h="5px" w="5px" />
-          <Text>km / day</Text>
-        </HStack>
-        <HStack spacing="5px">
-          <Box bg={palette.green} borderRadius="50%" h="5px" w="5px" />
-          <Text>fuel /100 km</Text>
-        </HStack>
-      </HStack>
-      <VStack align="stretch" gap="10px">
-        {rows.map((row, index) => (
-          <Grid gap="6px" gridTemplateColumns="1fr 1fr" key={index}>
-            <ThinBar color={palette.yellow} value={row.km} />
-            <ThinBar color={palette.green} value={row.fuel} />
-          </Grid>
-        ))}
-      </VStack>
-    </Box>
-  );
-}
-
 function ForecastChartPanel({ data, error, loading, showActual = true, title }) {
   return (
     <Box
@@ -805,11 +440,7 @@ function ForecastChartPanel({ data, error, loading, showActual = true, title }) 
 }
 
 export default function LoadForecastDashboard() {
-  const [chartDataByPeriod, setChartDataByPeriod] = useState({
-    daily: null,
-    hourly: null,
-    monthly: null,
-  });
+  const [chartDataByPeriod, setChartDataByPeriod] = useState({});
   const [chartErrors, setChartErrors] = useState({});
   const [apiState, setApiState] = useState({
     error: "",
@@ -895,131 +526,6 @@ export default function LoadForecastDashboard() {
           />
         ))}
       </Box>
-    </Box>
-  );
-}
-
-export function ExperimentalResults() {
-  const [chartDataByPeriod, setChartDataByPeriod] = useState({
-    daily: null,
-    hourly: null,
-    monthly: null,
-  });
-  const [chartErrors, setChartErrors] = useState({});
-  const [chartLoading, setChartLoading] = useState(true);
-  const [modelMetrics, setModelMetrics] = useState(defaultModelMetrics);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadMetrics() {
-      try {
-        const { body } = await forecastApi.getMetrics();
-        if (!isMounted) return;
-
-        setModelMetrics(normalizeModelMetrics(body));
-      } catch (error) {
-        if (!isMounted) return;
-
-        setModelMetrics(defaultModelMetrics);
-      }
-    }
-
-    async function loadActualVsForecastCharts(showLoading = false) {
-      if (showLoading) {
-        setChartLoading(true);
-      }
-      setChartErrors({});
-
-      const periods = [
-        { key: "hourly" },
-        { key: "daily" },
-        { key: "monthly" },
-      ];
-
-      const results = await Promise.allSettled(
-        periods.map(async (item) => {
-          const { body } = await forecastApi.getChart(item.key);
-          const data = normalizeForecastChart(body).behaviorSeries;
-
-          return [item.key, data];
-        }),
-      );
-
-      if (!isMounted) return;
-
-      const nextData = {};
-      const nextErrors = {};
-
-      results.forEach((result, index) => {
-        const key = periods[index].key;
-
-        if (result.status === "fulfilled") {
-          const [, data] = result.value;
-
-          if (!hasCompleteActualSeries(data)) {
-            nextData[key] = null;
-            nextErrors[key] = "No valid actual / forecast load data";
-          } else {
-            nextData[key] = data;
-          }
-        } else {
-          nextData[key] = null;
-          nextErrors[key] = result.reason?.message || "Can not load forecast data";
-        }
-      });
-
-      setChartDataByPeriod(nextData);
-      setChartErrors(nextErrors);
-      if (isMounted) setChartLoading(false);
-    }
-
-    loadMetrics();
-    loadActualVsForecastCharts(true);
-    let refreshTimer;
-
-    function scheduleNextRefresh() {
-      refreshTimer = setTimeout(async () => {
-        loadMetrics();
-        await loadActualVsForecastCharts(false);
-        if (isMounted) scheduleNextRefresh();
-      }, getMsUntilNextForecastRefresh());
-    }
-
-    scheduleNextRefresh();
-
-    return () => {
-      isMounted = false;
-      clearTimeout(refreshTimer);
-    };
-  }, []);
-
-  return (
-    <Box>
-      <SimpleGrid borderBottom={`1px solid ${palette.border}`} boxShadow="0 1px 0 rgba(255,255,255,0.025)" columns={{ base: 1, md: 3 }}>
-        <ModelMetricCard title="MAE" value={modelMetrics.mae} />
-        <ModelMetricCard title="RMSE" value={modelMetrics.rmse} />
-        <ModelMetricCard suffix="%" title="MAPE" value={modelMetrics.mape} />
-      </SimpleGrid>
-
-      <ForecastChartPanel
-        data={chartDataByPeriod.hourly}
-        error={chartErrors.hourly}
-        loading={chartLoading}
-        title="Hourly Actual vs Forecast Load Chart"
-      />
-      <ForecastChartPanel
-        data={chartDataByPeriod.daily}
-        error={chartErrors.daily}
-        loading={chartLoading}
-        title="Daily Actual vs Forecast Load Chart"
-      />
-      <ForecastChartPanel
-        data={chartDataByPeriod.monthly}
-        error={chartErrors.monthly}
-        loading={chartLoading}
-        title="Monthly Actual vs Forecast Load Chart"
-      />
     </Box>
   );
 }

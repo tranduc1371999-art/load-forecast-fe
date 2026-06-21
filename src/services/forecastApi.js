@@ -32,19 +32,19 @@ export const forecastEndpoints = [
   { key: "root", label: "Root", path: API_ENDPOINTS.root },
   { key: "health", label: "Health", path: API_ENDPOINTS.health },
   {
-    key: "hourly",
-    label: "Hourly Forecast",
-    path: API_ENDPOINTS.forecastHourly,
+    key: "shortTermHourly",
+    label: "Short-Term Hourly Forecast",
+    path: API_ENDPOINTS.forecastShortTermHourly,
   },
   {
-    key: "daily",
-    label: "Daily Forecast",
-    path: API_ENDPOINTS.forecastDaily,
+    key: "mediumTermDaily",
+    label: "Medium-Term Daily Forecast",
+    path: API_ENDPOINTS.forecastMediumTermDaily,
   },
   {
-    key: "monthly",
-    label: "Monthly Forecast",
-    path: API_ENDPOINTS.forecastMonthly,
+    key: "longTermMonthly",
+    label: "Long-Term Monthly Forecast",
+    path: API_ENDPOINTS.forecastLongTermMonthly,
   },
   {
     key: "metrics",
@@ -56,14 +56,16 @@ export const forecastEndpoints = [
 export const forecastApi = {
   root: () => request(API_ENDPOINTS.root),
   health: () => request(API_ENDPOINTS.health),
-  getChart: (period = "hourly") => {
+  getChart: (period = "shortTermHourly") => {
     const paths = {
-      daily: API_ENDPOINTS.forecastDaily,
-      hourly: API_ENDPOINTS.forecastHourly,
-      monthly: API_ENDPOINTS.forecastMonthly,
+      longTermMonthly: API_ENDPOINTS.forecastLongTermMonthly,
+      mediumTermDaily: API_ENDPOINTS.forecastMediumTermDaily,
+      mediumTermMonthly: API_ENDPOINTS.forecastMediumTermMonthly,
+      shortTerm15Min: API_ENDPOINTS.forecastShortTerm15Min,
+      shortTermHourly: API_ENDPOINTS.forecastShortTermHourly,
     };
 
-    return request(paths[period] || API_ENDPOINTS.forecastHourly);
+    return request(paths[period] || API_ENDPOINTS.forecastShortTermHourly);
   },
   getMetrics: () => request(API_ENDPOINTS.forecastMetrics),
   getRealtimeStreamUrl: (params = {}) => {

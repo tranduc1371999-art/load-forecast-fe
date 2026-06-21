@@ -5,9 +5,12 @@ export const API_BASE_URL =
 export const API_ENDPOINTS = {
   root: "/",
   health: "/api/health",
-  forecastHourly: "/api/forecast/hourly",
-  forecastDaily: "/api/forecast/daily",
-  forecastMonthly: "/api/forecast/monthly",
+  forecastShortTerm15Min: "/api/forecast/short-term/15min",
+  forecastShortTermHourly: "/api/forecast/short-term/hourly",
+  forecastMediumTermDaily: "/api/forecast/medium-term/daily",
+  forecastMediumTermMonthly: "/api/forecast/medium-term/monthly",
+  forecastLongTermMonthly: "/api/forecast/long-term/monthly",
+  forecastLongTermScenarios: "/api/forecast/long-term/scenarios",
   forecastMetrics: "/api/forecast/metrics",
   realtimeStream: "/api/realtime/stream",
 };

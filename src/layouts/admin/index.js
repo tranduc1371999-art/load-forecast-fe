@@ -15,7 +15,6 @@ import {
   MdBolt,
   MdLogout,
   MdPerson,
-  MdScience,
   MdTaskAlt,
   MdVerifiedUser,
 } from 'react-icons/md';
@@ -36,7 +35,6 @@ const navGroups = [
   {
     items: [
       { icon: MdDashboard, label: 'Dashboard', path: '/admin/load-forecast' },
-      { icon: MdScience, label: 'Experimental Results', path: '/admin/experimental-results' },
       { icon: MdDirectionsCar, label: 'Tracking', path: '/admin/default' },
       { icon: MdTaskAlt, label: 'Compliance', path: '/admin/data-tables' },
       { icon: MdVerifiedUser, label: 'Assets', path: '/admin/nft-marketplace' },
