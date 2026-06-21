@@ -55,9 +55,11 @@ const defaultModelMetrics = {
 };
 
 const forecastPeriods = [
-  { key: "daily", label: "Daily" },
-  { key: "monthly", label: "Monthly" },
+  { key: "daily", label: "Next 30 Days" },
+  { key: "monthly", label: "Next 6 Months" },
 ];
+
+const FORECAST_REFRESH_MS = 60 * 1000;
 
 function getValue(source, keys, fallback) {
   if (!source || typeof source !== "object") return fallback;
@@ -257,6 +259,48 @@ function formatTimestampLabel(value) {
     minute: "2-digit",
     month: "short",
   });
+}
+
+function parseTimestamp(value) {
+  if (!value) return null;
+  const date = new Date(String(value).replace(" ", "T"));
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function filterHourlyPoints(points) {
+  const hourlyPoints = [];
+
+  points.forEach((point) => {
+    const currentDate = parseTimestamp(point.timestamp);
+    const previousDate = parseTimestamp(hourlyPoints[hourlyPoints.length - 1]?.timestamp);
+
+    if (!currentDate || !previousDate || currentDate.getTime() - previousDate.getTime() >= 60 * 60 * 1000) {
+      hourlyPoints.push(point);
+    }
+  });
+
+  return hourlyPoints;
+}
+
+function limitSeriesPoints(series, limit) {
+  if (!series || !limit) return series;
+
+  return {
+    ...series,
+    actual: Array.isArray(series.actual) ? series.actual.slice(0, limit) : series.actual,
+    forecast: Array.isArray(series.forecast) ? series.forecast.slice(0, limit) : series.forecast,
+    labels: Array.isArray(series.labels) ? series.labels.slice(0, limit) : series.labels,
+  };
+}
+
+function hasCompleteActualSeries(series) {
+  return (
+    Array.isArray(series?.actual) &&
+    Array.isArray(series?.forecast) &&
+    series.actual.length === series.forecast.length &&
+    series.actual.every((value) => Number.isFinite(Number(value)))
+  );
 }
 
 function ChartMotionStyles() {
@@ -502,10 +546,10 @@ function MainBehaviorChart({ data }) {
   const seriesData = useMemo(() => data || buildMainSeries(), [data]);
   const forecastValues = seriesData.forecast || seriesData.red || seriesData.orange;
   const actualValues = seriesData.actual || seriesData.orange;
-  const hasActual =
-    Array.isArray(actualValues) &&
-    actualValues.length === forecastValues.length &&
-    actualValues.every((value) => Number.isFinite(Number(value)));
+  const hasActual = hasCompleteActualSeries({
+    actual: actualValues,
+    forecast: forecastValues,
+  });
   const width = 880;
   const height = 264;
   const bars = useMemo(
@@ -817,8 +861,12 @@ export default function LoadForecastDashboard() {
 
       const point = JSON.parse(event.data);
       points.push(point);
-      setRealtimeLatest(point);
-      setRealtimeData(normalizeForecastChart({ data: points }).behaviorSeries);
+      const hourlyPoints = filterHourlyPoints(points);
+      const next24Hours = hourlyPoints.slice(0, 24);
+      const latestHourlyPoint = next24Hours[next24Hours.length - 1] || point;
+
+      setRealtimeLatest(latestHourlyPoint);
+      setRealtimeData(normalizeForecastChart({ data: next24Hours }).behaviorSeries);
       setRealtimeState({
         error: "",
         loading: false,
@@ -862,17 +910,24 @@ export default function LoadForecastDashboard() {
   useEffect(() => {
     let isMounted = true;
 
-    async function loadForecastCharts() {
-      setApiState({
-        error: "",
-        loadedAt: null,
-        loading: true,
-      });
+    async function loadForecastCharts(showLoading = false) {
+      if (showLoading) {
+        setApiState({
+          error: "",
+          loadedAt: null,
+          loading: true,
+        });
+      }
 
       const results = await Promise.allSettled(
         forecastPeriods.map(async (item) => {
           const { body } = await forecastApi.getChart(item.key);
-          return [item.key, normalizeForecastChart(body).behaviorSeries];
+          const limits = {
+            daily: 30,
+            monthly: 6,
+          };
+
+          return [item.key, limitSeriesPoints(normalizeForecastChart(body).behaviorSeries, limits[item.key])];
         }),
       );
 
@@ -903,10 +958,12 @@ export default function LoadForecastDashboard() {
       });
     }
 
-    loadForecastCharts();
+    loadForecastCharts(true);
+    const refreshTimer = setInterval(() => loadForecastCharts(false), FORECAST_REFRESH_MS);
 
     return () => {
       isMounted = false;
+      clearInterval(refreshTimer);
     };
   }, []);
 
@@ -917,7 +974,7 @@ export default function LoadForecastDashboard() {
           data={realtimeData}
           error={realtimeState.error}
           loading={realtimeState.loading}
-          title="Realtime Load Forecast Dashboard"
+          title="Next 24 Hours Load Forecast Chart"
         />
         {realtimeLatest ? (
           <Flex
@@ -930,7 +987,7 @@ export default function LoadForecastDashboard() {
             wrap="wrap"
           >
             <Text color={palette.text}>{formatTimestampLabel(realtimeLatest.timestamp)}</Text>
-            <Text>Forecast {formatLoadValue(realtimeLatest.forecast_load)}</Text>
+            <Text>Hourly Forecast {formatLoadValue(realtimeLatest.forecast_load)}</Text>
             <Text>Error {formatLoadValue(realtimeLatest.error)}</Text>
             <Text>Error % {formatLoadValue(realtimeLatest.error_percent)}</Text>
           </Flex>
@@ -950,8 +1007,12 @@ export default function LoadForecastDashboard() {
 }
 
 export function ExperimentalResults() {
-  const [hourlyData, setHourlyData] = useState(null);
-  const [chartError, setChartError] = useState("");
+  const [chartDataByPeriod, setChartDataByPeriod] = useState({
+    daily: null,
+    hourly: null,
+    monthly: null,
+  });
+  const [chartErrors, setChartErrors] = useState({});
   const [chartLoading, setChartLoading] = useState(true);
   const [modelMetrics, setModelMetrics] = useState(defaultModelMetrics);
 
@@ -971,32 +1032,65 @@ export function ExperimentalResults() {
       }
     }
 
-    async function loadActualVsForecast() {
-      try {
+    async function loadActualVsForecastCharts(showLoading = false) {
+      if (showLoading) {
         setChartLoading(true);
-        setChartError("");
-
-        const { body } = await forecastApi.getChart("hourly");
-        if (!isMounted) return;
-
-        const data = normalizeForecastChart(body).behaviorSeries;
-        setHourlyData(data);
-        setChartError(data ? "" : "No valid actual / forecast load data");
-      } catch (error) {
-        if (!isMounted) return;
-
-        setHourlyData(null);
-        setChartError(error.message || "Can not load forecast data");
-      } finally {
-        if (isMounted) setChartLoading(false);
       }
+      setChartErrors({});
+
+      const periods = [
+        { key: "hourly", limit: 24 },
+        { key: "daily", limit: 30 },
+        { key: "monthly", limit: 6 },
+      ];
+
+      const results = await Promise.allSettled(
+        periods.map(async (item) => {
+          const { body } = await forecastApi.getChart(item.key);
+          const data = limitSeriesPoints(normalizeForecastChart(body).behaviorSeries, item.limit);
+
+          return [item.key, data];
+        }),
+      );
+
+      if (!isMounted) return;
+
+      const nextData = {};
+      const nextErrors = {};
+
+      results.forEach((result, index) => {
+        const key = periods[index].key;
+
+        if (result.status === "fulfilled") {
+          const [, data] = result.value;
+
+          if (!hasCompleteActualSeries(data)) {
+            nextData[key] = null;
+            nextErrors[key] = "No valid actual / forecast load data";
+          } else {
+            nextData[key] = data;
+          }
+        } else {
+          nextData[key] = null;
+          nextErrors[key] = result.reason?.message || "Can not load forecast data";
+        }
+      });
+
+      setChartDataByPeriod(nextData);
+      setChartErrors(nextErrors);
+      if (isMounted) setChartLoading(false);
     }
 
     loadMetrics();
-    loadActualVsForecast();
+    loadActualVsForecastCharts(true);
+    const refreshTimer = setInterval(() => {
+      loadMetrics();
+      loadActualVsForecastCharts(false);
+    }, FORECAST_REFRESH_MS);
 
     return () => {
       isMounted = false;
+      clearInterval(refreshTimer);
     };
   }, []);
 
@@ -1009,10 +1103,22 @@ export function ExperimentalResults() {
       </SimpleGrid>
 
       <ForecastChartPanel
-        data={hourlyData}
-        error={chartError}
+        data={chartDataByPeriod.hourly}
+        error={chartErrors.hourly}
         loading={chartLoading}
-        title="Actual vs Forecast Load Chart"
+        title="Next 24 Hours Actual vs Forecast Load Chart"
+      />
+      <ForecastChartPanel
+        data={chartDataByPeriod.daily}
+        error={chartErrors.daily}
+        loading={chartLoading}
+        title="Next 30 Days Actual vs Forecast Load Chart"
+      />
+      <ForecastChartPanel
+        data={chartDataByPeriod.monthly}
+        error={chartErrors.monthly}
+        loading={chartLoading}
+        title="Next 6 Months Actual vs Forecast Load Chart"
       />
     </Box>
   );
