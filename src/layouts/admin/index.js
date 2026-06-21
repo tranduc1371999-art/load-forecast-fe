@@ -185,7 +185,7 @@ function FleetSidebar() {
           justify={expanded ? 'flex-start' : 'center'}
           px={expanded ? '12px' : '0'}
         >
-          <Icon as={MdBolt} boxSize="30px" color={palette.text} flexShrink="0" />
+          <Icon as={MdBolt} boxSize="40px" color={palette.text} flexShrink="0" />
           <Text
             color={palette.text}
             display={expanded ? 'block' : 'none'}

@@ -134,13 +134,11 @@ function buildSeriesFromRecords(records) {
         "forecast",
         "prediction",
       ]),
-      errorPercent: getRecordNumber(record, ["error_percent", "errorPercent", "MAPE", "mape"]),
       timestamp: getValue(record, ["Timestamp", "timestamp", "time", "date"], ""),
     }))
     .filter((point) => point.forecast !== null);
 
   const actual = pairs.map((point) => point.actual);
-  const errorPercent = pairs.map((point) => point.errorPercent);
   const forecast = pairs.map((point) => point.forecast);
   const labels = pairs.map((point) => point.timestamp);
 
@@ -148,7 +146,6 @@ function buildSeriesFromRecords(records) {
 
   return {
     actual,
-    errorPercent,
     forecast,
     labels,
   };
@@ -197,7 +194,6 @@ function normalizeForecastChart(rawBody) {
     behaviorSeries: forecast
       ? {
           actual,
-          errorPercent: recordSeries?.errorPercent || [],
           forecast,
           labels: recordSeries?.labels || [],
         }
@@ -535,17 +531,12 @@ function MainBehaviorChart({ data, showActual = true }) {
   const seriesData = useMemo(() => data || buildMainSeries(), [data]);
   const forecastValues = seriesData.forecast || seriesData.red || seriesData.orange;
   const actualValues = seriesData.actual || seriesData.orange;
-  const errorPercentValues = seriesData.errorPercent || [];
   const hasActual =
     showActual &&
     hasCompleteActualSeries({
       actual: actualValues,
       forecast: forecastValues,
     });
-  const hasErrorPercent =
-    Array.isArray(errorPercentValues) &&
-    errorPercentValues.length === forecastValues.length &&
-    errorPercentValues.some((value) => Number.isFinite(Number(value)));
   const width = 880;
   const height = 264;
   const bars = useMemo(
@@ -645,7 +636,7 @@ function MainBehaviorChart({ data, showActual = true }) {
               <circle cx={hoverActual.x} cy={hoverActual.y} fill="#d5d0a3" r="3" stroke="#101110" strokeWidth="1.3" />
             ) : null}
             <circle cx={hoverForecast.x} cy={hoverForecast.y} fill={palette.red} r="3" stroke="#101110" strokeWidth="1.3" />
-            <rect fill="#0b0d0b" height={hasActual && hasErrorPercent ? "69" : hasActual || hasErrorPercent ? "56" : "42"} opacity="0.97" rx="3" stroke={palette.border} width="146" x={tooltipX} y={tooltipY} />
+            <rect fill="#0b0d0b" height={hasActual ? "56" : "42"} opacity="0.97" rx="3" stroke={palette.border} width="146" x={tooltipX} y={tooltipY} />
             <text fill={palette.text} fontSize="9" fontWeight="700" x={tooltipX + 8} y={tooltipY + 14}>
               {formatTimestampLabel(seriesData.labels?.[hoverIndex]) || `Point ${hoverIndex + 1}`}
             </text>
@@ -653,9 +644,6 @@ function MainBehaviorChart({ data, showActual = true }) {
               <text fill="#eee4aa" fontSize="9" x={tooltipX + 8} y={tooltipY + 31}>{`Actual ${formatLoadValue(actualValues[hoverIndex])}`}</text>
             ) : null}
             <text fill={palette.red} fontSize="9" x={tooltipX + 8} y={hasActual ? tooltipY + 44 : tooltipY + 31}>{`Forecast ${formatLoadValue(forecastValues[hoverIndex])}`}</text>
-            {hasErrorPercent ? (
-              <text fill={palette.muted} fontSize="9" x={tooltipX + 8} y={hasActual ? tooltipY + 57 : tooltipY + 44}>{`Error % ${formatLoadValue(errorPercentValues[hoverIndex])}`}</text>
-            ) : null}
           </g>
         ) : null}
       </svg>
