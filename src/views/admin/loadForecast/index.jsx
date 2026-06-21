@@ -55,7 +55,6 @@ const defaultModelMetrics = {
 };
 
 const forecastPeriods = [
-  { key: "hourly", label: "Hourly" },
   { key: "daily", label: "Daily" },
   { key: "monthly", label: "Monthly" },
 ];
@@ -101,21 +100,40 @@ function buildSeriesFromRecords(records) {
 
   const pairs = records
     .map((record) => ({
-      actual: getRecordNumber(record, ["actual_load", "actualLoad", "Actual Load", "actual"]),
-      forecast: getRecordNumber(record, ["forecast_load", "forecastLoad", "Forecast Load", "forecast", "prediction"]),
+      actual: getRecordNumber(record, [
+        "actual_load",
+        "actualLoad",
+        "Actual Load",
+        "actual_avg_load",
+        "actualAvgLoad",
+        "actual_peak_load",
+        "actualPeakLoad",
+        "actual",
+      ]),
+      forecast: getRecordNumber(record, [
+        "forecast_load",
+        "forecastLoad",
+        "Forecast Load",
+        "forecast_avg_load",
+        "forecastAvgLoad",
+        "forecast_peak_load",
+        "forecastPeakLoad",
+        "forecast",
+        "prediction",
+      ]),
       timestamp: getValue(record, ["Timestamp", "timestamp", "time", "date"], ""),
     }))
-    .filter((point) => point.actual !== null && point.forecast !== null);
+    .filter((point) => point.forecast !== null);
 
   const actual = pairs.map((point) => point.actual);
   const forecast = pairs.map((point) => point.forecast);
   const labels = pairs.map((point) => point.timestamp);
 
-  if (!actual.length || !forecast.length) return null;
+  if (!forecast.length) return null;
 
   return {
-    orange: actual,
-    red: forecast,
+    actual,
+    forecast,
     labels,
   };
 }
@@ -127,8 +145,17 @@ function normalizeForecastChart(rawBody) {
   const chart = payload.behaviorSummary || payload.behavior || payload.mainChart || payload.chart || payload;
   const series = chart.series || payload.series;
   const recordSeries = buildSeriesFromRecords(records);
-  const orange = recordSeries?.orange || normalizeSeriesData(chart.orange) || findSeries(series, ["orange", "actual", "load"], 0);
-  const red = recordSeries?.red || normalizeSeriesData(chart.red) || findSeries(series, ["red", "forecast", "predict"], 1);
+  const forecast =
+    recordSeries?.forecast ||
+    normalizeSeriesData(chart.forecast) ||
+    normalizeSeriesData(chart.red) ||
+    findSeries(series, ["forecast", "predict", "load"], 1) ||
+    findSeries(series, ["forecast", "predict", "load"], 0);
+  const actual =
+    recordSeries?.actual ||
+    normalizeSeriesData(chart.actual) ||
+    normalizeSeriesData(chart.orange) ||
+    findSeries(series, ["actual"], 0);
   const activeFleetData = payload.activeFleet || payload.active_fleet;
   const aggressiveDriversData = payload.aggressiveDrivers || payload.aggressive_drivers;
   const efficiencyData = payload.driversEfficiency || payload.drivers_efficiency;
@@ -151,7 +178,7 @@ function normalizeForecastChart(rawBody) {
         total: numberOrFallback(getValue(metrics, ["tasksTotal", "tasks_total", "totalTasks"], undefined), defaultMetrics.tasksProgress.total),
       },
     },
-    behaviorSeries: orange && red ? { orange, red, labels: recordSeries?.labels || [] } : null,
+    behaviorSeries: forecast ? { actual, forecast, labels: recordSeries?.labels || [] } : null,
     activeFleet: Array.isArray(activeFleetData)
       ? activeFleetData.map((item, index) => ({
           label: getValue(item, ["label", "name", "status"], activeFleet[index]?.label || `Status ${index + 1}`),
@@ -176,7 +203,7 @@ function normalizeForecastChart(rawBody) {
 }
 
 function normalizeModelMetrics(rawBody) {
-  const payload = rawBody?.data || rawBody || {};
+  const payload = rawBody?.metrics || rawBody?.data?.metrics || rawBody?.data || rawBody || {};
 
   return {
     mae: getRecordNumber(payload, ["MAE", "mae", "mean_absolute_error"]),
@@ -208,7 +235,12 @@ function getPoint(values, index, width, height, padX, padY, max, min) {
 }
 
 function formatLoadValue(value) {
-  return Number(value).toLocaleString(undefined, {
+  if (value === null || value === undefined) return "--";
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) return "--";
+
+  return number.toLocaleString(undefined, {
     maximumFractionDigits: 1,
   });
 }
@@ -468,6 +500,12 @@ function SmallLineChart({ redZone = false, up = false }) {
 function MainBehaviorChart({ data }) {
   const [hoverIndex, setHoverIndex] = useState(null);
   const seriesData = useMemo(() => data || buildMainSeries(), [data]);
+  const forecastValues = seriesData.forecast || seriesData.red || seriesData.orange;
+  const actualValues = seriesData.actual || seriesData.orange;
+  const hasActual =
+    Array.isArray(actualValues) &&
+    actualValues.length === forecastValues.length &&
+    actualValues.every((value) => Number.isFinite(Number(value)));
   const width = 880;
   const height = 264;
   const bars = useMemo(
@@ -483,7 +521,7 @@ function MainBehaviorChart({ data }) {
     [],
   );
   const chartRange = useMemo(() => {
-    const values = [...seriesData.orange, ...seriesData.red];
+    const values = hasActual ? [...actualValues, ...forecastValues] : [...forecastValues];
     const minValue = Math.min(...values);
     const maxValue = Math.max(...values);
     const padding = Math.max((maxValue - minValue) * 0.18, maxValue * 0.01, 1);
@@ -492,16 +530,16 @@ function MainBehaviorChart({ data }) {
       max: Math.ceil(maxValue + padding),
       min: Math.max(0, Math.floor(minValue - padding)),
     };
-  }, [seriesData]);
+  }, [actualValues, forecastValues, hasActual]);
   const midValue = Math.round((chartRange.min + chartRange.max) / 2);
   const firstLabel = formatTimestampLabel(seriesData.labels?.[0]) || "Start";
   const lastLabel = formatTimestampLabel(seriesData.labels?.[seriesData.labels.length - 1]) || "End";
-  const orangePath = makeLinePath(seriesData.orange, width, height, 29, 24, chartRange.max, chartRange.min);
-  const redPath = makeLinePath(seriesData.red, width, height, 29, 24, chartRange.max, chartRange.min);
-  const hoverOrange = hoverIndex === null ? null : getPoint(seriesData.orange, hoverIndex, width, height, 29, 24, chartRange.max, chartRange.min);
-  const hoverRed = hoverIndex === null ? null : getPoint(seriesData.red, hoverIndex, width, height, 29, 24, chartRange.max, chartRange.min);
-  const tooltipX = hoverOrange ? Math.min(Math.max(hoverOrange.x + 10, 36), width - 158) : 0;
-  const tooltipY = hoverOrange ? Math.max(Math.min(hoverOrange.y - 44, height - 70), 16) : 0;
+  const actualPath = hasActual ? makeLinePath(actualValues, width, height, 29, 24, chartRange.max, chartRange.min) : "";
+  const forecastPath = makeLinePath(forecastValues, width, height, 29, 24, chartRange.max, chartRange.min);
+  const hoverActual = hasActual && hoverIndex !== null ? getPoint(actualValues, hoverIndex, width, height, 29, 24, chartRange.max, chartRange.min) : null;
+  const hoverForecast = hoverIndex === null ? null : getPoint(forecastValues, hoverIndex, width, height, 29, 24, chartRange.max, chartRange.min);
+  const tooltipX = hoverForecast ? Math.min(Math.max(hoverForecast.x + 10, 36), width - 158) : 0;
+  const tooltipY = hoverForecast ? Math.max(Math.min(hoverForecast.y - 44, height - 70), 16) : 0;
 
   return (
     <Box h={{ base: "300px", lg: "258px" }} position="relative">
@@ -541,11 +579,13 @@ function MainBehaviorChart({ data }) {
         <text fill={palette.muted} fontSize="10" x="0" y="18">{formatLoadValue(chartRange.max)}</text>
         <text fill={palette.muted} fontSize="10" x="0" y="115">{formatLoadValue(midValue)}</text>
         <text fill={palette.muted} fontSize="10" x="0" y="220">{formatLoadValue(chartRange.min)}</text>
-        <path className="fleet-line" d={orangePath} fill="none" pathLength="1" stroke="#eee4aa" strokeOpacity="0.95" strokeWidth="1.35" />
-        <path className="fleet-line fleet-line-secondary" d={redPath} fill="none" pathLength="1" stroke={palette.red} strokeOpacity="1" strokeWidth="1.35" />
+        {hasActual ? (
+          <path className="fleet-line" d={actualPath} fill="none" pathLength="1" stroke="#eee4aa" strokeOpacity="0.95" strokeWidth="1.35" />
+        ) : null}
+        <path className="fleet-line fleet-line-secondary" d={forecastPath} fill="none" pathLength="1" stroke={palette.red} strokeOpacity="1" strokeWidth="1.55" />
         <text fill={palette.muted} fontSize="10" x="29" y="244">{firstLabel}</text>
         <text fill={palette.muted} fontSize="10" textAnchor="end" x="858" y="244">{lastLabel}</text>
-        {seriesData.orange.map((_, index) => (
+        {forecastValues.map((_, index) => (
           <rect
             fill="transparent"
             height="218"
@@ -553,30 +593,36 @@ function MainBehaviorChart({ data }) {
             onMouseEnter={() => setHoverIndex(index)}
             onMouseMove={() => setHoverIndex(index)}
             onMouseLeave={() => setHoverIndex(null)}
-            width={width / seriesData.orange.length}
-            x={(index / seriesData.orange.length) * width}
+            width={width / forecastValues.length}
+            x={(index / forecastValues.length) * width}
             y="0"
           />
         ))}
-        {hoverOrange && hoverRed ? (
+        {hoverForecast ? (
           <g pointerEvents="none">
-            <line stroke="#899087" strokeDasharray="2 3" strokeOpacity="0.96" strokeWidth="1" x1={hoverOrange.x} x2={hoverOrange.x} y1="12" y2="218" />
-            <circle cx={hoverOrange.x} cy={hoverOrange.y} fill="#d5d0a3" r="3" stroke="#101110" strokeWidth="1.3" />
-            <circle cx={hoverRed.x} cy={hoverRed.y} fill={palette.red} r="3" stroke="#101110" strokeWidth="1.3" />
-            <rect fill="#0b0d0b" height="56" opacity="0.97" rx="3" stroke={palette.border} width="146" x={tooltipX} y={tooltipY} />
+            <line stroke="#899087" strokeDasharray="2 3" strokeOpacity="0.96" strokeWidth="1" x1={hoverForecast.x} x2={hoverForecast.x} y1="12" y2="218" />
+            {hoverActual ? (
+              <circle cx={hoverActual.x} cy={hoverActual.y} fill="#d5d0a3" r="3" stroke="#101110" strokeWidth="1.3" />
+            ) : null}
+            <circle cx={hoverForecast.x} cy={hoverForecast.y} fill={palette.red} r="3" stroke="#101110" strokeWidth="1.3" />
+            <rect fill="#0b0d0b" height={hasActual ? "56" : "42"} opacity="0.97" rx="3" stroke={palette.border} width="146" x={tooltipX} y={tooltipY} />
             <text fill={palette.text} fontSize="9" fontWeight="700" x={tooltipX + 8} y={tooltipY + 14}>
               {formatTimestampLabel(seriesData.labels?.[hoverIndex]) || `Point ${hoverIndex + 1}`}
             </text>
-            <text fill="#eee4aa" fontSize="9" x={tooltipX + 8} y={tooltipY + 31}>{`Actual ${formatLoadValue(seriesData.orange[hoverIndex])}`}</text>
-            <text fill={palette.red} fontSize="9" x={tooltipX + 8} y={tooltipY + 44}>{`Forecast ${formatLoadValue(seriesData.red[hoverIndex])}`}</text>
+            {hasActual ? (
+              <text fill="#eee4aa" fontSize="9" x={tooltipX + 8} y={tooltipY + 31}>{`Actual ${formatLoadValue(actualValues[hoverIndex])}`}</text>
+            ) : null}
+            <text fill={palette.red} fontSize="9" x={tooltipX + 8} y={hasActual ? tooltipY + 44 : tooltipY + 31}>{`Forecast ${formatLoadValue(forecastValues[hoverIndex])}`}</text>
           </g>
         ) : null}
       </svg>
       <HStack bottom="2px" color={palette.muted} fontSize="10px" left="0" position="absolute" spacing="20px">
-        <HStack spacing="5px">
-          <Box bg="#eee4aa" borderRadius="50%" h="5px" w="5px" />
-          <Text>Actual Load</Text>
-        </HStack>
+        {hasActual ? (
+          <HStack spacing="5px">
+            <Box bg="#eee4aa" borderRadius="50%" h="5px" w="5px" />
+            <Text>Actual Load</Text>
+          </HStack>
+        ) : null}
         <HStack spacing="5px">
           <Box bg={palette.red} borderRadius="50%" h="5px" w="5px" />
           <Text>Forecast Load</Text>
@@ -730,11 +776,15 @@ function ForecastChartPanel({ data, error, loading, title }) {
 export default function LoadForecastDashboard() {
   const [chartDataByPeriod, setChartDataByPeriod] = useState({
     daily: null,
-    hourly: null,
     monthly: null,
   });
   const [chartErrors, setChartErrors] = useState({});
-  const [modelMetrics, setModelMetrics] = useState(defaultModelMetrics);
+  const [realtimeData, setRealtimeData] = useState(null);
+  const [realtimeLatest, setRealtimeLatest] = useState(null);
+  const [realtimeState, setRealtimeState] = useState({
+    error: "",
+    loading: true,
+  });
   const [apiState, setApiState] = useState({
     error: "",
     loadedAt: null,
@@ -743,24 +793,69 @@ export default function LoadForecastDashboard() {
 
   useEffect(() => {
     let isMounted = true;
+    const points = [];
+    const eventSource = new EventSource(
+      forecastApi.getRealtimeStreamUrl({ interval: 1, limit: 96 }),
+    );
 
-    async function loadMetrics() {
-      try {
-        const { body } = await forecastApi.getMetrics();
-        if (!isMounted) return;
+    setRealtimeState({
+      error: "",
+      loading: true,
+    });
 
-        setModelMetrics(normalizeModelMetrics(body));
-      } catch (error) {
-        if (!isMounted) return;
+    eventSource.addEventListener("open", () => {
+      if (!isMounted) return;
 
-        setModelMetrics(defaultModelMetrics);
+      setRealtimeState({
+        error: "",
+        loading: true,
+      });
+    });
+
+    eventSource.addEventListener("load_point", (event) => {
+      if (!isMounted) return;
+
+      const point = JSON.parse(event.data);
+      points.push(point);
+      setRealtimeLatest(point);
+      setRealtimeData(normalizeForecastChart({ data: points }).behaviorSeries);
+      setRealtimeState({
+        error: "",
+        loading: false,
+      });
+    });
+
+    eventSource.addEventListener("done", () => {
+      if (!isMounted) return;
+
+      setRealtimeState((current) => ({
+        ...current,
+        loading: false,
+      }));
+      eventSource.close();
+    });
+
+    eventSource.addEventListener("error", (event) => {
+      if (!isMounted) return;
+
+      let message = "Realtime stream unavailable";
+      if (event.data) {
+        try {
+          message = JSON.parse(event.data).message || message;
+        } catch (error) {
+          message = event.data;
+        }
       }
-    }
 
-    loadMetrics();
+      setRealtimeState({
+        error: message,
+        loading: false,
+      });
+    });
 
     return () => {
       isMounted = false;
+      eventSource.close();
     };
   }, []);
 
@@ -792,7 +887,7 @@ export default function LoadForecastDashboard() {
         if (result.status === "fulfilled") {
           const [, data] = result.value;
           nextData[key] = data;
-          if (!data) nextErrors[key] = "No valid actual_load / forecast_load data";
+          if (!data) nextErrors[key] = "No valid forecast load data";
         } else {
           nextData[key] = null;
           nextErrors[key] = result.reason?.message || "Can not load forecast data";
@@ -817,13 +912,29 @@ export default function LoadForecastDashboard() {
 
   return (
     <Box>
-      <SimpleGrid borderBottom={`1px solid ${palette.border}`} boxShadow="0 1px 0 rgba(255,255,255,0.025)" columns={{ base: 1, md: 3 }}>
-        <ModelMetricCard title="MAE" value={modelMetrics.mae} />
-        <ModelMetricCard title="RMSE" value={modelMetrics.rmse} />
-        <ModelMetricCard suffix="%" title="MAPE" value={modelMetrics.mape} />
-      </SimpleGrid>
-
       <Box px="0">
+        <ForecastChartPanel
+          data={realtimeData}
+          error={realtimeState.error}
+          loading={realtimeState.loading}
+          title="Realtime Load Forecast Dashboard"
+        />
+        {realtimeLatest ? (
+          <Flex
+            borderBottom={`1px solid ${palette.border}`}
+            color={palette.muted}
+            fontSize="11px"
+            gap="18px"
+            px="20px"
+            py="10px"
+            wrap="wrap"
+          >
+            <Text color={palette.text}>{formatTimestampLabel(realtimeLatest.timestamp)}</Text>
+            <Text>Forecast {formatLoadValue(realtimeLatest.forecast_load)}</Text>
+            <Text>Error {formatLoadValue(realtimeLatest.error)}</Text>
+            <Text>Error % {formatLoadValue(realtimeLatest.error_percent)}</Text>
+          </Flex>
+        ) : null}
         {forecastPeriods.map((item) => (
           <ForecastChartPanel
             data={chartDataByPeriod[item.key]}
@@ -834,6 +945,75 @@ export default function LoadForecastDashboard() {
           />
         ))}
       </Box>
+    </Box>
+  );
+}
+
+export function ExperimentalResults() {
+  const [hourlyData, setHourlyData] = useState(null);
+  const [chartError, setChartError] = useState("");
+  const [chartLoading, setChartLoading] = useState(true);
+  const [modelMetrics, setModelMetrics] = useState(defaultModelMetrics);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadMetrics() {
+      try {
+        const { body } = await forecastApi.getMetrics();
+        if (!isMounted) return;
+
+        setModelMetrics(normalizeModelMetrics(body));
+      } catch (error) {
+        if (!isMounted) return;
+
+        setModelMetrics(defaultModelMetrics);
+      }
+    }
+
+    async function loadActualVsForecast() {
+      try {
+        setChartLoading(true);
+        setChartError("");
+
+        const { body } = await forecastApi.getChart("hourly");
+        if (!isMounted) return;
+
+        const data = normalizeForecastChart(body).behaviorSeries;
+        setHourlyData(data);
+        setChartError(data ? "" : "No valid actual / forecast load data");
+      } catch (error) {
+        if (!isMounted) return;
+
+        setHourlyData(null);
+        setChartError(error.message || "Can not load forecast data");
+      } finally {
+        if (isMounted) setChartLoading(false);
+      }
+    }
+
+    loadMetrics();
+    loadActualVsForecast();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  return (
+    <Box>
+      <SimpleGrid borderBottom={`1px solid ${palette.border}`} boxShadow="0 1px 0 rgba(255,255,255,0.025)" columns={{ base: 1, md: 3 }}>
+        <ModelMetricCard title="MAE" value={modelMetrics.mae} />
+        <ModelMetricCard title="RMSE" value={modelMetrics.rmse} />
+        <ModelMetricCard suffix="%" title="MAPE" value={modelMetrics.mape} />
+      </SimpleGrid>
+
+      <ForecastChartPanel
+        data={hourlyData}
+        error={chartError}
+        loading={chartLoading}
+        title="Actual vs Forecast Load Chart"
+      />
     </Box>
   );
 }
